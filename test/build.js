@@ -125,7 +125,7 @@ describe('Build', function (done) {
 	before(function (done) {
 		async.parallel([
 			async.apply(rimraf, path.join(__dirname, '../build/public')),
-			async.apply(db.activatePlugin, 'nodebb-plugin-markdown'),
+			async.apply(db.sortedSetAdd, 'plugins:active', Date.now(), 'nodebb-plugin-markdown'),
 		], done);
 	});
 
@@ -170,7 +170,7 @@ describe('Build', function (done) {
 	it('should build client side styles', function (done) {
 		build.build(['client side styles'], function (err) {
 			assert.ifError(err);
-			var filename = path.join(__dirname, '../build/public/stylesheet.css');
+			var filename = path.join(__dirname, '../build/public/client.css');
 			assert(file.existsSync(filename));
 			assert(fs.readFileSync(filename).toString().startsWith('/*! normalize.css'));
 			done();
@@ -182,12 +182,18 @@ describe('Build', function (done) {
 			assert.ifError(err);
 			var filename = path.join(__dirname, '../build/public/admin.css');
 			assert(file.existsSync(filename));
-			assert(fs.readFileSync(filename).toString().startsWith('@charset "UTF-8";'));
+			var adminCSS = fs.readFileSync(filename).toString();
+			if (global.env === 'production') {
+				assert(adminCSS.startsWith('@charset "UTF-8";') || adminCSS.startsWith('@import url'));
+			} else {
+				assert(adminCSS.startsWith('.recent-replies'));
+			}
 			done();
 		});
 	});
 
 	it('should build templates', function (done) {
+		this.timeout(0);
 		build.build(['templates'], function (err) {
 			assert.ifError(err);
 			var filename = path.join(__dirname, '../build/public/templates/admin/header.tpl');

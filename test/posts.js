@@ -30,7 +30,6 @@ describe('Post\'s', function () {
 	var cid;
 
 	before(function (done) {
-		groups.resetCache();
 		async.series({
 			voterUid: function (next) {
 				user.create({ username: 'upvoter' }, next);
@@ -71,6 +70,75 @@ describe('Post\'s', function () {
 
 				groups.join('Global Moderators', globalModUid, done);
 			});
+		});
+	});
+
+	it('should update category teaser properly', async function () {
+		const util = require('util');
+		const getCategoriesAsync = util.promisify(async function getCategories(callback) {
+			request(nconf.get('url') + '/api/categories', { json: true }, function (err, res, body) {
+				callback(err, body);
+			});
+		});
+
+		const postResult = await topics.post({ uid: globalModUid, cid: cid, title: 'topic title', content: '123456789' });
+
+		let data = await getCategoriesAsync();
+		assert.equal(data.categories[0].teaser.pid, postResult.postData.pid);
+		assert.equal(data.categories[0].posts[0].content, '123456789');
+		assert.equal(data.categories[0].posts[0].pid, postResult.postData.pid);
+
+		const newUid = await user.create({ username: 'teaserdelete' });
+		const newPostResult = await topics.post({ uid: newUid, cid: cid, title: 'topic title', content: 'xxxxxxxx' });
+
+		data = await getCategoriesAsync();
+		assert.equal(data.categories[0].teaser.pid, newPostResult.postData.pid);
+		assert.equal(data.categories[0].posts[0].content, 'xxxxxxxx');
+		assert.equal(data.categories[0].posts[0].pid, newPostResult.postData.pid);
+
+		await user.delete(1, newUid);
+
+		data = await getCategoriesAsync();
+		assert.equal(data.categories[0].teaser.pid, postResult.postData.pid);
+		assert.equal(data.categories[0].posts[0].content, '123456789');
+		assert.equal(data.categories[0].posts[0].pid, postResult.postData.pid);
+	});
+
+	it('should change owner of post and topic properly', async function () {
+		const oldUid = await user.create({ username: 'olduser' });
+		const newUid = await user.create({ username: 'newuser' });
+		const postResult = await topics.post({ uid: oldUid, cid: cid, title: 'change owner', content: 'original post' });
+		const postData = await topics.reply({ uid: oldUid, tid: postResult.topicData.tid, content: 'firstReply' });
+		const pid1 = postResult.postData.pid;
+		const pid2 = postData.pid;
+
+		assert.deepStrictEqual(await db.sortedSetScores('tid:' + postResult.topicData.tid + ':posters', [oldUid, newUid]), [2, null]);
+
+		await posts.changeOwner([pid1, pid2], newUid);
+
+		assert.deepStrictEqual(await db.sortedSetScores('tid:' + postResult.topicData.tid + ':posters', [oldUid, newUid]), [0, 2]);
+
+		assert.deepStrictEqual(await posts.isOwner([pid1, pid2], oldUid), [false, false]);
+		assert.deepStrictEqual(await posts.isOwner([pid1, pid2], newUid), [true, true]);
+
+		assert.strictEqual(await user.getUserField(oldUid, 'postcount'), 0);
+		assert.strictEqual(await user.getUserField(newUid, 'postcount'), 2);
+
+		assert.strictEqual(await user.getUserField(oldUid, 'topiccount'), 0);
+		assert.strictEqual(await user.getUserField(newUid, 'topiccount'), 1);
+
+		assert.strictEqual(await db.sortedSetScore('users:postcount', oldUid), 0);
+		assert.strictEqual(await db.sortedSetScore('users:postcount', newUid), 2);
+
+		assert.strictEqual(await topics.isOwner(postResult.topicData.tid, oldUid), false);
+		assert.strictEqual(await topics.isOwner(postResult.topicData.tid, newUid), true);
+	});
+
+	it('should return falsy if post does not exist', function (done) {
+		posts.getPostData(9999, function (err, postData) {
+			assert.ifError(err);
+			assert.equal(postData, null);
+			done();
 		});
 	});
 
@@ -252,10 +320,36 @@ describe('Post\'s', function () {
 				assert.ifError(err);
 				posts.getPostField(replyPid, 'deleted', function (err, isDeleted) {
 					assert.ifError(err);
-					assert.equal(parseInt(isDeleted, 10), 1);
+					assert.strictEqual(isDeleted, 1);
 					done();
 				});
 			});
+		});
+
+		it('should not see post content if global mod does not have posts:view_deleted privilege', function (done) {
+			async.waterfall([
+				function (next) {
+					user.create({ username: 'global mod', password: '123456' }, next);
+				},
+				function (uid, next) {
+					groups.join('Global Moderators', uid, next);
+				},
+				function (next) {
+					privileges.categories.rescind(['posts:view_deleted'], cid, 'Global Moderators', next);
+				},
+				function (next) {
+					helpers.loginUser('global mod', '123456', function (err, _jar) {
+						assert.ifError(err);
+						var jar = _jar;
+
+						request(nconf.get('url') + '/api/topic/' + tid, { jar: jar, json: true }, function (err, res, body) {
+							assert.ifError(err);
+							assert.equal(body.posts[1].content, '[[topic:post_is_deleted]]');
+							privileges.categories.give(['posts:view_deleted'], cid, 'Global Moderators', next);
+						});
+					});
+				},
+			], done);
 		});
 
 		it('should restore a post', function (done) {
@@ -263,7 +357,7 @@ describe('Post\'s', function () {
 				assert.ifError(err);
 				posts.getPostField(replyPid, 'deleted', function (err, isDeleted) {
 					assert.ifError(err);
-					assert.equal(parseInt(isDeleted, 10), 0);
+					assert.strictEqual(isDeleted, 0);
 					done();
 				});
 			});
@@ -274,10 +368,10 @@ describe('Post\'s', function () {
 				assert.ifError(err);
 				posts.getPostField(replyPid, 'deleted', function (err, deleted) {
 					assert.ifError(err);
-					assert.equal(parseInt(deleted, 10), 1);
+					assert.strictEqual(deleted, 1);
 					posts.getPostField(mainPid, 'deleted', function (err, deleted) {
 						assert.ifError(err);
-						assert.equal(parseInt(deleted, 10), 1);
+						assert.strictEqual(deleted, 1);
 						done();
 					});
 				});
@@ -291,7 +385,7 @@ describe('Post\'s', function () {
 					assert.ifError(err);
 					topics.getTopicField(data.topicData.tid, 'deleted', function (err, deleted) {
 						assert.ifError(err);
-						assert.equal(parseInt(deleted, 10), 1);
+						assert.strictEqual(deleted, 1);
 						done();
 					});
 				});
@@ -365,7 +459,7 @@ describe('Post\'s', function () {
 		});
 
 		it('should error if title is too long', function (done) {
-			var longTitle = new Array(parseInt(meta.config.maximumTitleLength, 10) + 2).join('a');
+			var longTitle = new Array(meta.config.maximumTitleLength + 2).join('a');
 			socketPosts.edit({ uid: voterUid }, { pid: pid, content: 'edited post content', title: longTitle }, function (err) {
 				assert.equal(err.message, '[[error:title-too-long, ' + meta.config.maximumTitleLength + ']]');
 				done();
@@ -401,7 +495,7 @@ describe('Post\'s', function () {
 		});
 
 		it('should error if content is too long', function (done) {
-			var longContent = new Array(parseInt(meta.config.maximumPostLength, 10) + 2).join('a');
+			var longContent = new Array(meta.config.maximumPostLength + 2).join('a');
 			socketPosts.edit({ uid: voterUid }, { pid: pid, content: longContent }, function (err) {
 				assert.equal(err.message, '[[error:content-too-long, ' + meta.config.maximumPostLength + ']]');
 				done();
@@ -417,6 +511,17 @@ describe('Post\'s', function () {
 				assert.equal(data.topic.tags[0].value, 'edited');
 				done();
 			});
+		});
+
+		it('should disallow post editing for new users if post was made past the threshold for editing', function (done) {
+			meta.config.newbiePostEditDuration = 1;
+			setTimeout(function () {
+				socketPosts.edit({ uid: voterUid }, { pid: pid, content: 'edited post content again', title: 'edited title again', tags: ['edited-twice'] }, function (err, data) {
+					assert.equal(err.message, '[[error:post-edit-duration-expired, 1]]');
+					meta.config.newbiePostEditDuration = 3600;
+					done();
+				});
+			}, 1000);
 		});
 
 		it('should edit a deleted post', function (done) {
@@ -457,7 +562,7 @@ describe('Post\'s', function () {
 		it('should load diffs and reconstruct post', function (done) {
 			posts.diffs.load(replyPid, 0, voterUid, function (err, data) {
 				assert.ifError(err);
-				assert.equal(data.content, 'A reply to edit\n');
+				assert.equal(data.content, 'A reply to edit');
 				done();
 			});
 		});
@@ -592,6 +697,14 @@ describe('Post\'s', function () {
 	});
 
 	describe('parse', function () {
+		it('should not crash and return falsy if post data is falsy', function (done) {
+			posts.parsePost(null, function (err, postData) {
+				assert.ifError(err);
+				assert.strictEqual(postData, null);
+				done();
+			});
+		});
+
 		it('should store post content in cache', function (done) {
 			var oldValue = global.env;
 			global.env = 'production';
@@ -654,7 +767,7 @@ describe('Post\'s', function () {
 			}, function (err, postData) {
 				assert.ifError(err);
 				pid = postData.pid;
-				privileges.categories.rescind(['read'], cid, 'guests', done);
+				privileges.categories.rescind(['topics:read'], cid, 'guests', done);
 			});
 		});
 
@@ -771,10 +884,26 @@ describe('Post\'s', function () {
 		});
 
 		it('should get pid index', function (done) {
-			socketPosts.getPidIndex({ uid: voterUid }, { pid: pid, tid: topicData.tid, topicPostSort: 'oldest-to-newest' }, function (err, index) {
+			socketPosts.getPidIndex({ uid: voterUid }, { pid: pid, tid: topicData.tid, topicPostSort: 'oldest_to_newest' }, function (err, index) {
 				assert.ifError(err);
 				assert.equal(index, 2);
 				done();
+			});
+		});
+
+		it('should get pid index in reverse', function (done) {
+			topics.reply({
+				uid: voterUid,
+				tid: topicData.tid,
+				content: 'raw content',
+			}, function (err, postData) {
+				assert.ifError(err);
+
+				socketPosts.getPidIndex({ uid: voterUid }, { pid: postData.pid, tid: topicData.tid, topicPostSort: 'newest_to_oldest' }, function (err, index) {
+					assert.ifError(err);
+					assert.equal(index, 1);
+					done();
+				});
 			});
 		});
 	});
@@ -798,6 +927,14 @@ describe('Post\'s', function () {
 
 		it('should filter pids by multiple cids', function (done) {
 			posts.filterPidsByCid([postData.pid, 100, 101], [cid, 2, 3], function (err, pids) {
+				assert.ifError(err);
+				assert.deepEqual([postData.pid], pids);
+				done();
+			});
+		});
+
+		it('should filter pids by multiple cids', function (done) {
+			posts.filterPidsByCid([postData.pid, 100, 101], [cid], function (err, pids) {
 				assert.ifError(err);
 				assert.deepEqual([postData.pid], pids);
 				done();
@@ -913,26 +1050,39 @@ describe('Post\'s', function () {
 				},
 			], done);
 		});
+
+		it('should not crash if id does not exist', function (done) {
+			socketPosts.reject({ uid: globalModUid }, { id: '123123123' }, function (err) {
+				assert.equal(err.message, '[[error:no-privileges]]');
+				done();
+			});
+		});
 	});
 
 	describe('upload methods', function () {
-		var pid;
+		let pid;
+		let purgePid;
 
-		before(function (done) {
+		before(async () => {
 			// Create stub files for testing
 			['abracadabra.png', 'shazam.jpg', 'whoa.gif', 'amazeballs.jpg', 'wut.txt', 'test.bmp']
-				.forEach(filename => fs.closeSync(fs.openSync(path.join(__dirname, '../public/uploads/files', filename), 'w')));
+				.forEach(filename => fs.closeSync(fs.openSync(path.join(nconf.get('upload_path'), 'files', filename), 'w')));
 
-			topics.post({
+			const topicPostData = await topics.post({
 				uid: 1,
 				cid: 1,
 				title: 'topic with some images',
 				content: 'here is an image [alt text](/assets/uploads/files/abracadabra.png) and another [alt text](/assets/uploads/files/shazam.jpg)',
-			}, function (err, topicPostData) {
-				assert.ifError(err);
-				pid = topicPostData.postData.pid;
-				done();
 			});
+			pid = topicPostData.postData.pid;
+
+			const purgePostData = await topics.post({
+				uid: 1,
+				cid: 1,
+				title: 'topic with some images, to be purged',
+				content: 'here is an image [alt text](/assets/uploads/files/whoa.gif) and another [alt text](/assets/uploads/files/amazeballs.jpg)',
+			});
+			purgePid = purgePostData.postData.pid;
 		});
 
 		describe('.sync()', function () {
@@ -942,7 +1092,7 @@ describe('Post\'s', function () {
 
 					db.sortedSetCard('post:' + pid + ':uploads', function (err, length) {
 						assert.ifError(err);
-						assert.strictEqual(2, length);
+						assert.strictEqual(length, 2);
 						done();
 					});
 				});
@@ -1079,6 +1229,31 @@ describe('Post\'s', function () {
 					assert.strictEqual(false, uploads.includes('wut.txt'));
 					done();
 				});
+			});
+		});
+
+		describe('.dissociateAll()', () => {
+			it('should remove all images from a post\'s maintained list of uploads', async () => {
+				await posts.uploads.dissociateAll(pid);
+				const uploads = await posts.uploads.list(pid);
+
+				assert.equal(uploads.length, 0);
+			});
+		});
+
+		describe('Dissociation on purge', () => {
+			it('should not dissociate images on post deletion', async () => {
+				await posts.delete(purgePid, 1);
+				const uploads = await posts.uploads.list(purgePid);
+
+				assert.equal(uploads.length, 2);
+			});
+
+			it('should dissociate images on post purge', async () => {
+				await posts.purge(purgePid, 1);
+				const uploads = await posts.uploads.list(purgePid);
+
+				assert.equal(uploads.length, 0);
 			});
 		});
 	});

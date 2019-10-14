@@ -1,34 +1,30 @@
 'use strict';
 
-var async = require('async');
-var posts = require('../../posts');
-var privileges = require('../../privileges');
+const posts = require('../../posts');
+const privileges = require('../../privileges');
 
 module.exports = function (SocketPosts) {
-	SocketPosts.getDiffs = function (socket, data, callback) {
-		async.waterfall([
-			function (next) {
-				privileges.posts.can('posts:history', data.pid, socket.uid, function (err, allowed) {
-					next(err || allowed ? null : new Error('[[error:no-privileges]]'));
-				});
-			},
-			function (next) {
-				posts.diffs.list(data.pid, next);
-			},
-			function (timestamps, next) {
-				timestamps.unshift(Date.now());
-				next(null, timestamps);
-			},
-		], callback);
+	SocketPosts.getDiffs = async function (socket, data) {
+		await privilegeCheck(data.pid, socket.uid);
+		const timestamps = await posts.diffs.list(data.pid);
+		timestamps.unshift(Date.now());
+		return timestamps;
 	};
 
-	SocketPosts.showPostAt = function (socket, data, callback) {
-		privileges.posts.can('posts:history', data.pid, socket.uid, function (err, allowed) {
-			if (err || !allowed) {
-				return callback(err || new Error('[[error:no-privileges]]'));
-			}
-
-			posts.diffs.load(data.pid, data.since, socket.uid, callback);
-		});
+	SocketPosts.showPostAt = async function (socket, data) {
+		await privilegeCheck(data.pid, socket.uid);
+		return await posts.diffs.load(data.pid, data.since, socket.uid);
 	};
+
+	async function privilegeCheck(pid, uid) {
+		const [deleted, privilegesData] = await Promise.all([
+			posts.getPostField(pid, 'deleted'),
+			privileges.posts.get([pid], uid),
+		]);
+
+		const allowed = privilegesData[0]['posts:history'] && (deleted ? privilegesData[0]['posts:view_deleted'] : true);
+		if (!allowed) {
+			throw new Error('[[error:no-privileges]]');
+		}
+	}
 };

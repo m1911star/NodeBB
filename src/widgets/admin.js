@@ -1,81 +1,98 @@
 'use strict';
 
-var fs = require('fs');
-var path = require('path');
-var async = require('async');
-var nconf = require('nconf');
-var plugins = require('../plugins');
+const fs = require('fs');
+const util = require('util');
+const readFileAsync = util.promisify(fs.readFile);
 
-var admin = {};
+const path = require('path');
+const nconf = require('nconf');
+const benchpress = require('benchpressjs');
 
-admin.get = function (callback) {
-	async.parallel({
-		areas: function (next) {
-			var defaultAreas = [
-				{ name: 'Global Sidebar', template: 'global', location: 'sidebar' },
-				{ name: 'Global Header', template: 'global', location: 'header' },
-				{ name: 'Global Footer', template: 'global', location: 'footer' },
+const plugins = require('../plugins');
+const groups = require('../groups');
+const index = require('./index');
 
-				{ name: 'Group Page (Left)', template: 'groups/details.tpl', location: 'left' },
-				{ name: 'Group Page (Right)', template: 'groups/details.tpl', location: 'right' },
-			];
+const admin = module.exports;
 
-			plugins.fireHook('filter:widgets.getAreas', defaultAreas, next);
-		},
-		widgets: function (next) {
-			plugins.fireHook('filter:widgets.getWidgets', [], next);
-		},
-		adminTemplate: function (next) {
-			fs.readFile(path.resolve(nconf.get('views_dir'), 'admin/partials/widget-settings.tpl'), 'utf8', next);
-		},
-	}, function (err, widgetData) {
-		if (err) {
-			return callback(err);
-		}
-		widgetData.areas.push({ name: 'Draft Zone', template: 'global', location: 'drafts' });
+admin.get = async function () {
+	const [areas, availableWidgets] = await Promise.all([
+		admin.getAreas(),
+		getAvailableWidgets(),
+	]);
 
-		async.each(widgetData.areas, function (area, next) {
-			require('./index').getArea(area.template, area.location, function (err, areaData) {
-				area.data = areaData;
-				next(err);
-			});
-		}, function (err) {
-			if (err) {
-				return callback(err);
-			}
-
-			widgetData.widgets.forEach(function (w) {
-				w.content += widgetData.adminTemplate;
-			});
-
-			var templates = [];
-			var list = {};
-			var index = 0;
-
-			widgetData.areas.forEach(function (area) {
-				if (typeof list[area.template] === 'undefined') {
-					list[area.template] = index;
-					templates.push({
-						template: area.template,
-						areas: [],
-					});
-
-					index += 1;
-				}
-
-				templates[list[area.template]].areas.push({
-					name: area.name,
-					location: area.location,
-				});
-			});
-
-			callback(false, {
-				templates: templates,
-				areas: widgetData.areas,
-				availableWidgets: widgetData.widgets,
-			});
-		});
-	});
+	return {
+		templates: buildTemplatesFromAreas(areas),
+		areas: areas,
+		availableWidgets: availableWidgets,
+	};
 };
 
-module.exports = admin;
+admin.getAreas = async function () {
+	const defaultAreas = [
+		{ name: 'Global Sidebar', template: 'global', location: 'sidebar' },
+		{ name: 'Global Header', template: 'global', location: 'header' },
+		{ name: 'Global Footer', template: 'global', location: 'footer' },
+
+		{ name: 'Group Page (Left)', template: 'groups/details.tpl', location: 'left' },
+		{ name: 'Group Page (Right)', template: 'groups/details.tpl', location: 'right' },
+	];
+
+	const areas = await plugins.fireHook('filter:widgets.getAreas', defaultAreas);
+
+	areas.push({ name: 'Draft Zone', template: 'global', location: 'drafts' });
+	const areaData = await Promise.all(areas.map(area => index.getArea(area.template, area.location)));
+	areas.forEach((area, i) => {
+		area.data = areaData[i];
+	});
+	return areas;
+};
+
+async function getAvailableWidgets() {
+	const [availableWidgets, adminTemplate] = await Promise.all([
+		plugins.fireHook('filter:widgets.getWidgets', []),
+		renderAdminTemplate(),
+	]);
+	availableWidgets.forEach(function (w) {
+		w.content += adminTemplate;
+	});
+	return availableWidgets;
+}
+
+async function renderAdminTemplate() {
+	const [source, groupsData] = await Promise.all([
+		getSource(),
+		groups.getNonPrivilegeGroups('groups:createtime', 0, -1),
+	]);
+	groupsData.sort((a, b) => b.system - a.system);
+	return await benchpress.compileRender(source, { groups: groupsData });
+}
+
+async function getSource() {
+	return await readFileAsync(path.resolve(nconf.get('views_dir'), 'admin/partials/widget-settings.tpl'), 'utf8');
+}
+
+function buildTemplatesFromAreas(areas) {
+	const templates = [];
+	const list = {};
+	let index = 0;
+
+	areas.forEach(function (area) {
+		if (typeof list[area.template] === 'undefined') {
+			list[area.template] = index;
+			templates.push({
+				template: area.template,
+				areas: [],
+			});
+
+			index += 1;
+		}
+
+		templates[list[area.template]].areas.push({
+			name: area.name,
+			location: area.location,
+		});
+	});
+	return templates;
+}
+
+require('../promisify')(admin);

@@ -1,34 +1,36 @@
 
 'use strict';
 
-module.exports = function (redisClient, module) {
-	module.sortedSetUnionCard = function (keys, callback) {
+module.exports = function (module) {
+	const helpers = require('../helpers');
+	module.sortedSetUnionCard = async function (keys) {
 		var tempSetName = 'temp_' + Date.now();
-
-		var multi = redisClient.multi();
+		if (!keys.length) {
+			return 0;
+		}
+		var multi = module.client.multi();
 		multi.zunionstore([tempSetName, keys.length].concat(keys));
 		multi.zcard(tempSetName);
 		multi.del(tempSetName);
-		multi.exec(function (err, results) {
-			if (err) {
-				return callback(err);
-			}
-
-			callback(null, Array.isArray(results) && results.length ? results[1] : 0);
-		});
+		const results = await helpers.execBatch(multi);
+		return Array.isArray(results) && results.length ? results[1] : 0;
 	};
 
-	module.getSortedSetUnion = function (params, callback) {
+	module.getSortedSetUnion = async function (params) {
 		params.method = 'zrange';
-		module.sortedSetUnion(params, callback);
+		return await module.sortedSetUnion(params);
 	};
 
-	module.getSortedSetRevUnion = function (params, callback) {
+	module.getSortedSetRevUnion = async function (params) {
 		params.method = 'zrevrange';
-		module.sortedSetUnion(params, callback);
+		return await module.sortedSetUnion(params);
 	};
 
-	module.sortedSetUnion = function (params, callback) {
+	module.sortedSetUnion = async function (params) {
+		if (!params.sets.length) {
+			return [];
+		}
+
 		var tempSetName = 'temp_' + Date.now();
 
 		var rangeParams = [tempSetName, params.start, params.stop];
@@ -36,23 +38,15 @@ module.exports = function (redisClient, module) {
 			rangeParams.push('WITHSCORES');
 		}
 
-		var multi = redisClient.multi();
+		var multi = module.client.multi();
 		multi.zunionstore([tempSetName, params.sets.length].concat(params.sets));
 		multi[params.method](rangeParams);
 		multi.del(tempSetName);
-		multi.exec(function (err, results) {
-			if (err) {
-				return callback(err);
-			}
-			if (!params.withScores) {
-				return callback(null, results ? results[1] : null);
-			}
-			results = results[1] || [];
-			var objects = [];
-			for (var i = 0; i < results.length; i += 2) {
-				objects.push({ value: results[i], score: parseFloat(results[i + 1]) });
-			}
-			callback(null, objects);
-		});
+		let results = await helpers.execBatch(multi);
+		if (!params.withScores) {
+			return results ? results[1] : null;
+		}
+		results = results[1] || [];
+		return helpers.zsetToObjectArray(results);
 	};
 };

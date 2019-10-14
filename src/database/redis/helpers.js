@@ -1,34 +1,14 @@
 'use strict';
 
+const util = require('util');
+
 var helpers = module.exports;
 
 helpers.noop = function () {};
 
-helpers.multiKeys = function (redisClient, command, keys, callback) {
-	callback = callback || function () {};
-	var multi = redisClient.multi();
-	for (var i = 0; i < keys.length; i += 1) {
-		multi[command](keys[i]);
-	}
-	multi.exec(callback);
-};
-
-helpers.multiKeysValue = function (redisClient, command, keys, value, callback) {
-	callback = callback || function () {};
-	var multi = redisClient.multi();
-	for (var i = 0; i < keys.length; i += 1) {
-		multi[command](String(keys[i]), String(value));
-	}
-	multi.exec(callback);
-};
-
-helpers.multiKeyValues = function (redisClient, command, key, values, callback) {
-	callback = callback || function () {};
-	var multi = redisClient.multi();
-	for (var i = 0; i < values.length; i += 1) {
-		multi[command](String(key), String(values[i]));
-	}
-	multi.exec(callback);
+helpers.execBatch = async function (batch) {
+	const proFn = util.promisify(batch.exec).bind(batch);
+	return await proFn();
 };
 
 helpers.resultsToBool = function (results) {
@@ -36,4 +16,12 @@ helpers.resultsToBool = function (results) {
 		results[i] = results[i] === 1;
 	}
 	return results;
+};
+
+helpers.zsetToObjectArray = function (data) {
+	const objects = new Array(data.length / 2);
+	for (let i = 0, k = 0; i < objects.length; i += 1, k += 2) {
+		objects[i] = { value: data[k], score: parseFloat(data[k + 1]) };
+	}
+	return objects;
 };

@@ -1,39 +1,38 @@
 'use strict';
 
-var async = require('async');
+const categories = require('../../categories');
+const privileges = require('../../privileges');
 
-var categories = require('../../categories');
-var privileges = require('../../privileges');
+const privilegesController = module.exports;
 
-var privilegesController = module.exports;
+privilegesController.get = async function (req, res) {
+	const cid = req.params.cid ? parseInt(req.params.cid, 10) : 0;
+	const [privilegesData, categoriesData] = await Promise.all([
+		cid ? privileges.categories.list(cid) : privileges.global.list(),
+		categories.buildForSelectAll(),
+	]);
 
-privilegesController.get = function (req, res, callback) {
-	var cid = req.params.cid ? req.params.cid : 0;
-	async.waterfall([
-		function (next) {
-			async.parallel({
-				privileges: function (next) {
-					if (!cid) {
-						privileges.global.list(next);
-					} else {
-						privileges.categories.list(cid, next);
-					}
-				},
-				allCategories: async.apply(categories.buildForSelect, req.uid, 'read'),
-			}, next);
-		},
-		function (data) {
-			data.allCategories.forEach(function (category) {
-				if (category) {
-					category.selected = parseInt(category.cid, 10) === parseInt(cid, 10);
-				}
-			});
+	categoriesData.unshift({
+		cid: 0,
+		name: '[[admin/manage/privileges:global]]',
+		icon: 'fa-list',
+	});
 
-			res.render('admin/manage/privileges', {
-				privileges: data.privileges,
-				allCategories: data.allCategories,
-				cid: cid,
-			});
-		},
-	], callback);
+	let selectedCategory;
+	categoriesData.forEach(function (category) {
+		if (category) {
+			category.selected = category.cid === cid;
+
+			if (category.selected) {
+				selectedCategory = category;
+			}
+		}
+	});
+
+	res.render('admin/manage/privileges', {
+		privileges: privilegesData,
+		categories: categoriesData,
+		selectedCategory: selectedCategory,
+		cid: cid,
+	});
 };

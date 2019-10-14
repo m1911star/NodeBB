@@ -1,84 +1,96 @@
 
 'use strict';
 
-var async = require('async');
-var nconf = require('nconf');
-var querystring = require('querystring');
+const nconf = require('nconf');
 
-var user = require('../user');
-var topics = require('../topics');
-var meta = require('../meta');
-var helpers = require('./helpers');
-var pagination = require('../pagination');
+const user = require('../user');
+const categories = require('../categories');
+const topics = require('../topics');
+const meta = require('../meta');
+const helpers = require('./helpers');
+const pagination = require('../pagination');
+const privileges = require('../privileges');
 
-var recentController = module.exports;
+const recentController = module.exports;
 
-recentController.get = function (req, res, next) {
-	var page = parseInt(req.query.page, 10) || 1;
-	var stop = 0;
-	var settings;
-	var cid = req.query.cid;
-	var filter = req.params.filter || '';
-	var categoryData;
-	var rssToken;
-
-	if (!helpers.validFilters[filter]) {
+recentController.get = async function (req, res, next) {
+	const data = await recentController.getData(req, 'recent', 'recent');
+	if (!data) {
 		return next();
 	}
-
-	async.waterfall([
-		function (next) {
-			async.parallel({
-				settings: function (next) {
-					user.getSettings(req.uid, next);
-				},
-				watchedCategories: function (next) {
-					helpers.getWatchedCategories(req.uid, cid, next);
-				},
-				rssToken: function (next) {
-					user.auth.getFeedToken(req.uid, next);
-				},
-			}, next);
-		},
-		function (results, next) {
-			rssToken = results.rssToken;
-			settings = results.settings;
-			categoryData = results.watchedCategories;
-
-			var start = Math.max(0, (page - 1) * settings.topicsPerPage);
-			stop = start + settings.topicsPerPage - 1;
-
-			topics.getRecentTopics(cid, req.uid, start, stop, filter, next);
-		},
-		function (data) {
-			data.categories = categoryData.categories;
-			data.selectedCategory = categoryData.selectedCategory;
-			data.selectedCids = categoryData.selectedCids;
-			data.nextStart = stop + 1;
-			data.set = 'topics:recent';
-			data['feeds:disableRSS'] = parseInt(meta.config['feeds:disableRSS'], 10) === 1;
-			data.rssFeedUrl = nconf.get('relative_path') + '/recent.rss';
-			if (req.loggedIn) {
-				data.rssFeedUrl += '?uid=' + req.uid + '&token=' + rssToken;
-			}
-			data.title = meta.config.homePageTitle || '[[pages:home]]';
-			data.filters = helpers.buildFilters('recent', filter);
-
-			data.selectedFilter = data.filters.find(function (filter) {
-				return filter && filter.selected;
-			});
-
-			var pageCount = Math.max(1, Math.ceil(data.topicCount / settings.topicsPerPage));
-			data.pagination = pagination.create(page, pageCount, req.query);
-
-			if (req.originalUrl.startsWith(nconf.get('relative_path') + '/api/recent') || req.originalUrl.startsWith(nconf.get('relative_path') + '/recent')) {
-				data.title = '[[pages:recent]]';
-				data.breadcrumbs = helpers.buildBreadcrumbs([{ text: '[[recent:title]]' }]);
-			}
-
-			data.querystring = cid ? '?' + querystring.stringify({ cid: cid }) : '';
-
-			res.render('recent', data);
-		},
-	], next);
+	res.render('recent', data);
 };
+
+recentController.getData = async function (req, url, sort) {
+	const page = parseInt(req.query.page, 10) || 1;
+	let term = helpers.terms[req.query.term];
+	const cid = req.query.cid;
+	const filter = req.query.filter || '';
+
+	if (!helpers.validFilters[filter] || (!term && req.query.term)) {
+		return null;
+	}
+	term = term || 'alltime';
+
+	const states = [categories.watchStates.watching, categories.watchStates.notwatching];
+	if (filter === 'watched') {
+		states.push(categories.watchStates.ignoring);
+	}
+
+	const [settings, categoryData, rssToken, canPost] = await Promise.all([
+		user.getSettings(req.uid),
+		helpers.getCategoriesByStates(req.uid, cid, states),
+		user.auth.getFeedToken(req.uid),
+		canPostTopic(req.uid),
+	]);
+
+	const start = Math.max(0, (page - 1) * settings.topicsPerPage);
+	const stop = start + settings.topicsPerPage - 1;
+
+	const data = await topics.getSortedTopics({
+		cids: cid || categoryData.categories.map(c => c.cid),
+		uid: req.uid,
+		start: start,
+		stop: stop,
+		filter: filter,
+		term: term,
+		sort: sort,
+		floatPinned: req.query.pinned,
+		query: req.query,
+	});
+
+	data.canPost = canPost;
+	data.categories = categoryData.categories;
+	data.allCategoriesUrl = url + helpers.buildQueryString('', filter, '');
+	data.selectedCategory = categoryData.selectedCategory;
+	data.selectedCids = categoryData.selectedCids;
+	data['feeds:disableRSS'] = meta.config['feeds:disableRSS'];
+	data.rssFeedUrl = nconf.get('relative_path') + '/' + url + '.rss';
+	if (req.loggedIn) {
+		data.rssFeedUrl += '?uid=' + req.uid + '&token=' + rssToken;
+	}
+	data.title = meta.config.homePageTitle || '[[pages:home]]';
+
+	data.filters = helpers.buildFilters(url, filter, req.query);
+	data.selectedFilter = data.filters.find(filter => filter && filter.selected);
+	data.terms = helpers.buildTerms(url, term, req.query);
+	data.selectedTerm = data.terms.find(term => term && term.selected);
+
+	var pageCount = Math.max(1, Math.ceil(data.topicCount / settings.topicsPerPage));
+	data.pagination = pagination.create(page, pageCount, req.query);
+
+	if (req.originalUrl.startsWith(nconf.get('relative_path') + '/api/' + url) || req.originalUrl.startsWith(nconf.get('relative_path') + '/' + url)) {
+		data.title = '[[pages:' + url + ']]';
+		data.breadcrumbs = helpers.buildBreadcrumbs([{ text: '[[' + url + ':title]]' }]);
+	}
+
+	return data;
+};
+
+async function canPostTopic(uid) {
+	let cids = await categories.getAllCidsFromSet('categories:cid');
+	cids = await privileges.categories.filterCids('topics:create', cids, uid);
+	return cids.length > 0;
+}
+
+require('../promisify')(recentController, ['get']);

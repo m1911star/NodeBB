@@ -1,9 +1,9 @@
 'use strict';
 
-var db = require('../../database');
 
 var async = require('async');
 var winston = require('winston');
+var db = require('../../database');
 
 module.exports = {
 	name: 'Upgrading chats',
@@ -18,8 +18,8 @@ module.exports = {
 			var roomId = globalData.nextChatRoomId || 1;
 			var currentMid = 1;
 
-			async.whilst(function () {
-				return currentMid <= globalData.nextMid;
+			async.whilst(function (next) {
+				next(null, currentMid <= globalData.nextMid);
 			}, function (next) {
 				db.getObject('message:' + currentMid, function (err, message) {
 					var msgTime;

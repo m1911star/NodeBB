@@ -1,14 +1,16 @@
 'use strict';
 
 
-var	assert = require('assert');
+var assert = require('assert');
 var nconf = require('nconf');
 var request = require('request');
 var async = require('async');
 
 var db = require('./mocks/databasemock');
 var user = require('../src/user');
+var utils = require('../src/utils');
 var meta = require('../src/meta');
+var privileges = require('../src/privileges');
 var helpers = require('./helpers');
 
 describe('authentication', function () {
@@ -201,7 +203,6 @@ describe('authentication', function () {
 		loginUser('regular', 'regularpwd', function (err, response, body, jar) {
 			assert.ifError(err);
 			assert(body);
-
 			request({
 				url: nconf.get('url') + '/api/me',
 				json: true,
@@ -237,7 +238,7 @@ describe('authentication', function () {
 		});
 	});
 
-	it('should fail to login if ip address if invalid', function (done) {
+	it('should fail to login if ip address is invalid', function (done) {
 		var jar = request.jar();
 		request({
 			url: nconf.get('url') + '/api/config',
@@ -303,6 +304,18 @@ describe('authentication', function () {
 		});
 	});
 
+	it('should fail to login if user does not have password field in db', function (done) {
+		user.create({ username: 'hasnopassword', email: 'no@pass.org' }, function (err, uid) {
+			assert.ifError(err);
+			loginUser('hasnopassword', 'doesntmatter', function (err, response, body) {
+				assert.ifError(err);
+				assert.equal(response.statusCode, 403);
+				assert.equal(body, '[[error:invalid-login-credentials]]');
+				done();
+			});
+		});
+	});
+
 	it('should fail to login if password is longer than 4096', function (done) {
 		var longPassword;
 		for (var i = 0; i < 5000; i++) {
@@ -316,15 +329,15 @@ describe('authentication', function () {
 		});
 	});
 
-
 	it('should fail to login if local login is disabled', function (done) {
-		meta.config.allowLocalLogin = 0;
-		loginUser('someuser', 'somepass', function (err, response, body) {
-			meta.config.allowLocalLogin = 1;
+		privileges.global.rescind(['local:login'], 'registered-users', function (err) {
 			assert.ifError(err);
-			assert.equal(response.statusCode, 403);
-			assert.equal(body, '[[error:local-login-disabled]]');
-			done();
+			loginUser('regular', 'regularpwd', function (err, response, body) {
+				assert.ifError(err);
+				assert.equal(response.statusCode, 403);
+				assert.equal(body, '[[error:local-login-disabled]]');
+				privileges.global.give(['local:login'], 'registered-users', done);
+			});
 		});
 	});
 
@@ -382,9 +395,9 @@ describe('authentication', function () {
 	});
 
 	it('should queue user if ip is used before', function (done) {
-		meta.config.registrationType = 'admin-approval-ip';
+		meta.config.registrationApprovalType = 'admin-approval-ip';
 		registerUser('another@user.com', 'anotheruser', 'anotherpwd', function (err, response, body) {
-			meta.config.registrationType = 'normal';
+			meta.config.registrationApprovalType = 'normal';
 			assert.ifError(err);
 			assert.equal(response.statusCode, 200);
 			assert.equal(body.message, '[[register:registration-added-to-queue]]');
@@ -443,21 +456,21 @@ describe('authentication', function () {
 	it('should prevent banned user from logging in', function (done) {
 		user.create({ username: 'banme', password: '123456', email: 'ban@me.com' }, function (err, uid) {
 			assert.ifError(err);
-			user.ban(uid, 0, 'spammer', function (err) {
+			user.bans.ban(uid, 0, 'spammer', function (err) {
 				assert.ifError(err);
 				loginUser('banme', '123456', function (err, res, body) {
 					assert.ifError(err);
 					assert.equal(res.statusCode, 403);
 					assert.equal(body, '[[error:user-banned-reason, spammer]]');
-					user.unban(uid, function (err) {
+					user.bans.unban(uid, function (err) {
 						assert.ifError(err);
 						var expiry = Date.now() + 10000;
-						user.ban(uid, expiry, '', function (err) {
+						user.bans.ban(uid, expiry, '', function (err) {
 							assert.ifError(err);
 							loginUser('banme', '123456', function (err, res, body) {
 								assert.ifError(err);
 								assert.equal(res.statusCode, 403);
-								assert.equal(body, '[[error:user-banned-reason-until, ' + (new Date(parseInt(expiry, 10)).toString()) + ', No reason given.]]');
+								assert.equal(body, '[[error:user-banned-reason-until, ' + utils.toISOString(expiry) + ', No reason given.]]');
 								done();
 							});
 						});
@@ -505,4 +518,3 @@ describe('authentication', function () {
 		], done);
 	});
 });
-

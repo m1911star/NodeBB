@@ -1,26 +1,27 @@
 'use strict';
 
-var nconf = require('nconf');
-var async = require('async');
-var validator = require('validator');
-var winston = require('winston');
+const nconf = require('nconf');
+const validator = require('validator');
+const winston = require('winston');
+const querystring = require('querystring');
+const _ = require('lodash');
 
-var user = require('../user');
-var privileges = require('../privileges');
-var categories = require('../categories');
-var plugins = require('../plugins');
-var meta = require('../meta');
-var middleware = require('../middleware');
+const user = require('../user');
+const privileges = require('../privileges');
+const categories = require('../categories');
+const plugins = require('../plugins');
+const meta = require('../meta');
+const middleware = require('../middleware');
 
-var helpers = module.exports;
+const helpers = module.exports;
 
 helpers.noScriptErrors = function (req, res, error, httpStatus) {
 	if (req.body.noscript !== 'true') {
 		return res.status(httpStatus).send(error);
 	}
 
-	var middleware = require('../middleware');
-	var httpStatusString = httpStatus.toString();
+	const middleware = require('../middleware');
+	const httpStatusString = httpStatus.toString();
 	middleware.buildHeader(req, res, function () {
 		res.status(httpStatus).render(httpStatusString, {
 			path: req.path,
@@ -34,27 +35,72 @@ helpers.noScriptErrors = function (req, res, error, httpStatus) {
 
 helpers.validFilters = { '': true, new: true, watched: true, unreplied: true };
 
-helpers.buildFilters = function (url, filter) {
+helpers.terms = {
+	daily: 'day',
+	weekly: 'week',
+	monthly: 'month',
+};
+
+helpers.buildQueryString = function (cid, filter, term) {
+	const qs = {};
+	if (cid) {
+		qs.cid = cid;
+	}
+	if (filter) {
+		qs.filter = filter;
+	}
+	if (term) {
+		qs.term = term;
+	}
+
+	return Object.keys(qs).length ? '?' + querystring.stringify(qs) : '';
+};
+
+helpers.buildFilters = function (url, filter, query) {
 	return [{
 		name: '[[unread:all-topics]]',
-		url: url,
+		url: url + helpers.buildQueryString(query.cid, '', query.term),
 		selected: filter === '',
 		filter: '',
 	}, {
 		name: '[[unread:new-topics]]',
-		url: url + '/new',
+		url: url + helpers.buildQueryString(query.cid, 'new', query.term),
 		selected: filter === 'new',
 		filter: 'new',
 	}, {
 		name: '[[unread:watched-topics]]',
-		url: url + '/watched',
+		url: url + helpers.buildQueryString(query.cid, 'watched', query.term),
 		selected: filter === 'watched',
 		filter: 'watched',
 	}, {
 		name: '[[unread:unreplied-topics]]',
-		url: url + '/unreplied',
+		url: url + helpers.buildQueryString(query.cid, 'unreplied', query.term),
 		selected: filter === 'unreplied',
 		filter: 'unreplied',
+	}];
+};
+
+helpers.buildTerms = function (url, term, query) {
+	return [{
+		name: '[[recent:alltime]]',
+		url: url + helpers.buildQueryString(query.cid, query.filter, ''),
+		selected: term === 'alltime',
+		term: 'alltime',
+	}, {
+		name: '[[recent:day]]',
+		url: url + helpers.buildQueryString(query.cid, query.filter, 'daily'),
+		selected: term === 'day',
+		term: 'day',
+	}, {
+		name: '[[recent:week]]',
+		url: url + helpers.buildQueryString(query.cid, query.filter, 'weekly'),
+		selected: term === 'week',
+		term: 'week',
+	}, {
+		name: '[[recent:month]]',
+		url: url + helpers.buildQueryString(query.cid, query.filter, 'monthly'),
+		selected: term === 'month',
+		term: 'month',
 	}];
 };
 
@@ -67,7 +113,7 @@ helpers.notAllowed = function (req, res, error) {
 		if (err) {
 			return winston.error(err);
 		}
-		if (req.loggedIn) {
+		if (req.loggedIn || req.uid === -1) {
 			if (res.locals.isAPI) {
 				res.status(403).json({
 					path: req.path.replace(/^\/api/, ''),
@@ -86,10 +132,10 @@ helpers.notAllowed = function (req, res, error) {
 				});
 			}
 		} else if (res.locals.isAPI) {
-			req.session.returnTo = nconf.get('relative_path') + req.url.replace(/^\/api/, '');
+			req.session.returnTo = req.url.replace(/^\/api/, '');
 			res.status(401).json('not-authorized');
 		} else {
-			req.session.returnTo = nconf.get('relative_path') + req.url;
+			req.session.returnTo = req.url;
 			res.redirect(nconf.get('relative_path') + '/login');
 		}
 	});
@@ -103,50 +149,37 @@ helpers.redirect = function (res, url) {
 	}
 };
 
-helpers.buildCategoryBreadcrumbs = function (cid, callback) {
-	var breadcrumbs = [];
+helpers.buildCategoryBreadcrumbs = async function (cid) {
+	const breadcrumbs = [];
 
-	async.whilst(function () {
-		return parseInt(cid, 10);
-	}, function (next) {
-		categories.getCategoryFields(cid, ['name', 'slug', 'parentCid', 'disabled', 'isSection'], function (err, data) {
-			if (err) {
-				return next(err);
-			}
-
-			if (!parseInt(data.disabled, 10) && !parseInt(data.isSection, 10)) {
-				breadcrumbs.unshift({
-					text: validator.escape(String(data.name)),
-					url: nconf.get('relative_path') + '/category/' + data.slug,
-				});
-			}
-
-			cid = data.parentCid;
-			next();
-		});
-	}, function (err) {
-		if (err) {
-			return callback(err);
-		}
-
-		if (meta.config.homePageRoute && meta.config.homePageRoute !== 'categories') {
+	while (parseInt(cid, 10)) {
+		/* eslint-disable no-await-in-loop */
+		const data = await categories.getCategoryFields(cid, ['name', 'slug', 'parentCid', 'disabled', 'isSection']);
+		if (!data.disabled && !data.isSection) {
 			breadcrumbs.unshift({
-				text: '[[global:header.categories]]',
-				url: nconf.get('relative_path') + '/categories',
+				text: String(data.name),
+				url: nconf.get('relative_path') + '/category/' + data.slug,
 			});
 		}
-
+		cid = data.parentCid;
+	}
+	if (meta.config.homePageRoute && meta.config.homePageRoute !== 'categories') {
 		breadcrumbs.unshift({
-			text: '[[global:home]]',
-			url: nconf.get('relative_path') + '/',
+			text: '[[global:header.categories]]',
+			url: nconf.get('relative_path') + '/categories',
 		});
+	}
 
-		callback(null, breadcrumbs);
+	breadcrumbs.unshift({
+		text: '[[global:home]]',
+		url: nconf.get('relative_path') + '/',
 	});
+
+	return breadcrumbs;
 };
 
 helpers.buildBreadcrumbs = function (crumbs) {
-	var breadcrumbs = [
+	const breadcrumbs = [
 		{
 			text: '[[global:home]]',
 			url: nconf.get('relative_path') + '/',
@@ -166,78 +199,128 @@ helpers.buildBreadcrumbs = function (crumbs) {
 };
 
 helpers.buildTitle = function (pageTitle) {
-	var titleLayout = meta.config.titleLayout || '{pageTitle} | {browserTitle}';
+	const titleLayout = meta.config.titleLayout || '{pageTitle} | {browserTitle}';
 
-	var browserTitle = validator.escape(String(meta.config.browserTitle || meta.config.title || 'NodeBB'));
+	const browserTitle = validator.escape(String(meta.config.browserTitle || meta.config.title || 'NodeBB'));
 	pageTitle = pageTitle || '';
-	var title = titleLayout.replace('{pageTitle}', function () {
-		return pageTitle;
-	}).replace('{browserTitle}', function () {
-		return browserTitle;
-	});
+	const title = titleLayout.replace('{pageTitle}', () => pageTitle).replace('{browserTitle}', () => browserTitle);
 	return title;
 };
 
-helpers.getWatchedCategories = function (uid, selectedCid, callback) {
+helpers.getCategories = async function (set, uid, privilege, selectedCid) {
+	const cids = await categories.getCidsByPrivilege(set, uid, privilege);
+	return await getCategoryData(cids, uid, selectedCid);
+};
+
+helpers.getCategoriesByStates = async function (uid, selectedCid, states) {
+	const cids = await categories.getAllCidsFromSet('categories:cid');
+	return await getCategoryData(cids, uid, selectedCid, states);
+};
+
+async function getCategoryData(cids, uid, selectedCid, states) {
 	if (selectedCid && !Array.isArray(selectedCid)) {
 		selectedCid = [selectedCid];
 	}
-	async.waterfall([
-		function (next) {
-			user.getWatchedCategories(uid, next);
-		},
-		function (cids, next) {
-			privileges.categories.filterCids('read', cids, uid, next);
-		},
-		function (cids, next) {
-			categories.getCategoriesFields(cids, ['cid', 'name', 'slug', 'icon', 'link', 'color', 'bgColor', 'parentCid'], next);
-		},
-		function (categoryData, next) {
-			categoryData = categoryData.filter(function (category) {
-				return category && !category.link;
-			});
-			var selectedCategory = [];
-			var selectedCids = [];
-			categoryData.forEach(function (category) {
-				category.selected = selectedCid ? selectedCid.indexOf(String(category.cid)) !== -1 : false;
-				if (category.selected) {
-					selectedCategory.push(category);
-					selectedCids.push(parseInt(category.cid, 10));
-				}
-			});
-			selectedCids.sort(function (a, b) {
-				return a - b;
-			});
 
-			if (selectedCategory.length > 1) {
-				selectedCategory = {
-					icon: 'fa-plus',
-					name: '[[unread:multiple-categories-selected]]',
-					bgColor: '#ddd',
-				};
-			} else if (selectedCategory.length === 1) {
-				selectedCategory = selectedCategory[0];
-			} else {
-				selectedCategory = undefined;
-			}
+	states = states || [categories.watchStates.watching, categories.watchStates.notwatching];
 
-			var categoriesData = [];
-			var tree = categories.getTree(categoryData, 0);
+	const [allowed, watchState, categoryData, isAdmin] = await Promise.all([
+		privileges.categories.isUserAllowedTo('topics:read', cids, uid),
+		categories.getWatchState(cids, uid),
+		categories.getCategoriesData(cids),
+		user.isAdministrator(uid),
+	]);
 
-			tree.forEach(function (category) {
-				recursive(category, categoriesData, '');
-			});
+	categories.getTree(categoryData);
 
-			next(null, { categories: categoriesData, selectedCategory: selectedCategory, selectedCids: selectedCids });
+	const cidToAllowed = _.zipObject(cids, allowed.map(allowed => isAdmin || allowed));
+	const cidToCategory = _.zipObject(cids, categoryData);
+	const cidToWatchState = _.zipObject(cids, watchState);
+
+	const visibleCategories = categoryData.filter(function (c) {
+		const hasVisibleChildren = c && Array.isArray(c.children) && c.children.some(c => c && cidToAllowed[c.cid] && states.includes(cidToWatchState[c.cid]));
+		const isCategoryVisible = c && cidToAllowed[c.cid] && !c.link && !c.disabled && states.includes(cidToWatchState[c.cid]);
+		const shouldBeRemoved = !hasVisibleChildren && !isCategoryVisible;
+
+		if (shouldBeRemoved && c && c.parent && c.parent.cid && cidToCategory[c.parent.cid]) {
+			cidToCategory[c.parent.cid].children = cidToCategory[c.parent.cid].children.filter(child => child.cid !== c.cid);
+		}
+
+		return c && !shouldBeRemoved;
+	});
+
+	const categoriesData = categories.buildForSelectCategories(visibleCategories);
+
+	let selectedCategory = [];
+	const selectedCids = [];
+	categoriesData.forEach(function (category) {
+		category.selected = selectedCid ? selectedCid.includes(String(category.cid)) : false;
+		if (category.selected) {
+			selectedCategory.push(category);
+			selectedCids.push(category.cid);
+		}
+	});
+	selectedCids.sort((a, b) => a - b);
+
+	if (selectedCategory.length > 1) {
+		selectedCategory = {
+			icon: 'fa-plus',
+			name: '[[unread:multiple-categories-selected]]',
+			bgColor: '#ddd',
+		};
+	} else if (selectedCategory.length === 1) {
+		selectedCategory = selectedCategory[0];
+	} else {
+		selectedCategory = undefined;
+	}
+
+	return {
+		categories: categoriesData,
+		selectedCategory: selectedCategory,
+		selectedCids: selectedCids,
+	};
+}
+
+helpers.getHomePageRoutes = async function (uid) {
+	let cids = await categories.getAllCidsFromSet('categories:cid');
+	cids = await privileges.categories.filterCids('find', cids, uid);
+	const categoryData = await categories.getCategoriesFields(cids, ['name', 'slug']);
+
+	const categoryRoutes = categoryData.map(function (category) {
+		return {
+			route: 'category/' + category.slug,
+			name: 'Category: ' + category.name,
+		};
+	});
+	const routes = [
+		{
+			route: 'categories',
+			name: 'Categories',
 		},
-	], callback);
+		{
+			route: 'unread',
+			name: 'Unread',
+		},
+		{
+			route: 'recent',
+			name: 'Recent',
+		},
+		{
+			route: 'top',
+			name: 'Top',
+		},
+		{
+			route: 'popular',
+			name: 'Popular',
+		},
+	].concat(categoryRoutes, [
+		{
+			route: 'custom',
+			name: 'Custom',
+		},
+	]);
+	const data = await plugins.fireHook('filter:homepage.get', { routes: routes });
+	return data.routes;
 };
 
-function recursive(category, categoriesData, level) {
-	category.level = level;
-	categoriesData.push(category);
-
-	category.children.forEach(function (child) {
-		recursive(child, categoriesData, '&nbsp;&nbsp;&nbsp;&nbsp;' + level);
-	});
-}
+require('../promisify')(helpers);

@@ -18,11 +18,13 @@
     "last_reply_time": "آخرین پاسخ",
     "reply-as-topic": "پاسخ به موضوع",
     "guest-login-reply": "وارد شوید تا پست بفرستید",
+    "login-to-view": "🔒 Log in to view",
     "edit": "ویرایش",
     "delete": "حذف",
     "purge": "پاک کردن",
     "restore": "برگرداندن",
     "move": "جابه‌جا کردن",
+    "change-owner": "Change Owner",
     "fork": "شاخه ساختن",
     "link": "پیوند",
     "share": "اشتراک‌گذاری",
@@ -35,7 +37,7 @@
     "view-history": "تاریخچه ویرایش",
     "bookmark_instructions": "برای بازگشت به آخرین پست در این موضوع اینجا را کلیک کنید.",
     "flag_title": "پرچم‌گذاری این موضوع برای بررسی ناظران",
-    "merged_message": "This topic has been merged into <a href=\"/topic/%1\">%2</a>",
+    "merged_message": "این تاپیک با %2 ادغام شد",
     "deleted_message": "این موضوع پاک شده است. تنها کاربرانِ با حق مدیریت موضوع می‌توانند آن را ببینند.",
     "following_topic.message": "از این پس اگر کسی در این موضوع پست بگذارد، شما آگاه خواهید شد.",
     "not_following_topic.message": "شما این موضوع را تو فهرست موضوعات خوانده نشده می‌بینید، اما وقتی پست جدیدی ارسال می‌شود آگاه‌سازی دریافت نمی‌کنید.",
@@ -62,8 +64,9 @@
     "thread_tools.lock": "قفل کردن موضوع",
     "thread_tools.unlock": "باز کردن موضوع",
     "thread_tools.move": "جابجا کردن موضوع",
-    "thread_tools.move-posts": "Move Posts",
+    "thread_tools.move-posts": "انتقال پست ها",
     "thread_tools.move_all": "جابجایی همه",
+    "thread_tools.change_owner": "Change Owner",
     "thread_tools.select_category": "انتخاب دسته",
     "thread_tools.fork": "شاخه ساختن از موضوع",
     "thread_tools.delete": "پاک کردن موضوع",
@@ -97,7 +100,8 @@
     "fork_success": "موضوع با موفقیت منشعب شد! برای رفتن به موضوع انشعابی اینجا را کلیک کنید.",
     "delete_posts_instruction": "با کلیک بر روی پست شما می خواهید به حذف/پاکسازی",
     "merge_topics_instruction": "بر روی عنوان موضوعاتی که می خواهید ادغام کنید کلیک کنید",
-    "move_posts_instruction": "Click the posts you want to move",
+    "move_posts_instruction": "بر روی پستی که می خواهید انتقال دهید کلیک کنید",
+    "change_owner_instruction": "Click the posts you want to assign to another user",
     "composer.title_placeholder": "عنوان موضوعتان را اینجا بنویسید...",
     "composer.handle_placeholder": "نام",
     "composer.discard": "دور بیانداز",
@@ -118,7 +122,7 @@
     "sort_by": "مرتب‌سازی بر اساس",
     "oldest_to_newest": "قدیمی‌ترین به جدید‌ترین",
     "newest_to_oldest": "جدید‌ترین به قدیمی‌ترین",
-    "most_votes": "Most Votes",
+    "most_votes": "بیشترین رای ها",
     "most_posts": "Most Posts",
     "stale.title": "آیا مایلید به جای آن یک موضوع جدید ایجاد کنید؟",
     "stale.warning": "موضوعی که شما در حال پاسخگویی به آن هستید قدیمی می باشد. آیا میلید به جای آن یک موضوع جدید ایجاد کنید و در آن به این موضوع ارجاع دهید؟",
@@ -126,8 +130,10 @@
     "stale.reply_anyway": "در هر صورت می خواهم به این موضوع پاسخ دهم",
     "link_back": "پاسخ: [%1](%2)",
     "diffs.title": "تاریخچه ویرایش پست",
-    "diffs.description": "This post has <strong>%1</strong> revisions. Click one of the revisions below to see the post content at that point in time.",
-    "diffs.no-revisions-description": "This post has <strong>%1</strong> revisions.",
-    "diffs.current-revision": "current revision",
-    "diffs.original-revision": "original revision"
+    "diffs.description": "این پست %1 نسخه دارد. بر روی یکی از نسخه ها کلیک کنید تا محتوای پست در آن زمان را ببینید.",
+    "diffs.no-revisions-description": "این پست %1 نسخه دارد.",
+    "diffs.current-revision": "نسخه فعلی",
+    "diffs.original-revision": "نسخه اصلی",
+    "timeago_later": "%1 later",
+    "timeago_earlier": "%1 earlier"
 }

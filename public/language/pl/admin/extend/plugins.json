@@ -9,9 +9,10 @@
 
 	"plugin-search": "Szukaj wtyczek",
 	"plugin-search-placeholder": "Szukaj wtyczki...",
+	"submit-anonymous-usage": "Prześlij anonimowe dane użycia wtyczki.",
 	"reorder-plugins": "Posortuj wtyczki",
 	"order-active": "Posortuj aktywne wtyczki",
-	"dev-interested": "Zainteresowany pisaniem wtyczek do NodeBB?",
+	"dev-interested": "Chcesz pisać wtyczki do NodeBB?",
 	"docs-info": "Pełna dokumentacja dotycząca tworzenia wtyczek jest dostępna na <a target=\"_blank\" href=\"https://docs.nodebb.org/development/plugins/\">NodeBB Docs Portal</a>.",
 
 	"order.description": "Niektóre wtyczki działają optymalnie wówczas, gdy są inicjalizowane przed innymi/po innych.",
@@ -29,6 +30,8 @@
 	"plugin-item.more-info": "Więcej informacji:",
 	"plugin-item.unknown": "Nieznane",
 	"plugin-item.unknown-explanation": "Nie udało się ustalić stanu tej wtyczki, prawdopodobnie z powodu błędu konfiguracji.",
+	"plugin-item.compatible": "Ten plugin jest zgodny z wersją NodeBB %1",
+	"plugin-item.not-compatible": "Ta wtyczka nie zawiera danych dotyczących zgodności, upewnij się, że działa w środowisku produkcyjnym.",
 
 	"alert.enabled": "Wtyczka włączona",
 	"alert.disabled": "Wtyczka wyłączona",

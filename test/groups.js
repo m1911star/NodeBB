@@ -14,7 +14,6 @@ describe('Groups', function () {
 	var adminUid;
 	var testUid;
 	before(function (done) {
-		Groups.resetCache();
 		async.series([
 			function (next) {
 				// Create a group to play around with
@@ -38,6 +37,14 @@ describe('Groups', function () {
 					private: 1,
 					disableJoinRequests: 0,
 				}, next);
+			},
+			async () => {
+				await Groups.create({
+					name: 'PrivateNoLeave',
+					description: 'Private group',
+					private: 1,
+					disableLeave: 1,
+				});
 			},
 			function (next) {
 				// Create a new user
@@ -63,17 +70,17 @@ describe('Groups', function () {
 			},
 		], function (err, results) {
 			assert.ifError(err);
-			testUid = results[3];
-			adminUid = results[4];
+			testUid = results[4];
+			adminUid = results[5];
 			Groups.join('administrators', adminUid, done);
 		});
 	});
 
 	describe('.list()', function () {
 		it('should list the groups present', function (done) {
-			Groups.getGroupsFromSet('groups:visible:createtime', 0, 0, -1, function (err, groups) {
+			Groups.getGroupsFromSet('groups:visible:createtime', 0, -1, function (err, groups) {
 				assert.ifError(err);
-				assert.equal(groups.length, 4);
+				assert.equal(groups.length, 5);
 				done();
 			});
 		});
@@ -121,7 +128,7 @@ describe('Groups', function () {
 		it('should return the groups when search query is empty', function (done) {
 			socketGroups.search({ uid: adminUid }, { query: '' }, function (err, groups) {
 				assert.ifError(err);
-				assert.equal(4, groups.length);
+				assert.equal(5, groups.length);
 				done();
 			});
 		});
@@ -204,6 +211,22 @@ describe('Groups', function () {
 			Groups.isMember(2, 'Test', function (err, isMember) {
 				assert.ifError(err);
 				assert.strictEqual(isMember, false);
+				done();
+			});
+		});
+
+		it('should return true for uid 0 and guests group', function (done) {
+			Groups.isMembers([1, 0], 'guests', function (err, isMembers) {
+				assert.ifError(err);
+				assert.deepStrictEqual(isMembers, [false, true]);
+				done();
+			});
+		});
+
+		it('should return true for uid 0 and guests group', function (done) {
+			Groups.isMemberOfGroups(0, ['guests', 'registered-users'], function (err, isMembers) {
+				assert.ifError(err);
+				assert.deepStrictEqual(isMembers, [true, false]);
 				done();
 			});
 		});
@@ -334,6 +357,20 @@ describe('Groups', function () {
 				done();
 			});
 		});
+
+		it('should return falsy for userTitleEnabled', function (done) {
+			Groups.create({ name: 'userTitleEnabledGroup' }, function (err) {
+				assert.ifError(err);
+				Groups.setGroupField('userTitleEnabledGroup', 'userTitleEnabled', 0, function (err) {
+					assert.ifError(err);
+					Groups.getGroupData('userTitleEnabledGroup', function (err, data) {
+						assert.ifError(err);
+						assert.strictEqual(data.userTitleEnabled, 0);
+						done();
+					});
+				});
+			});
+		});
 	});
 
 	describe('.hide()', function () {
@@ -343,7 +380,7 @@ describe('Groups', function () {
 
 				Groups.get('foo', {}, function (err, groupObj) {
 					assert.ifError(err);
-					assert.strictEqual(true, groupObj.hidden);
+					assert.strictEqual(1, groupObj.hidden);
 					done();
 				});
 			});
@@ -427,7 +464,6 @@ describe('Groups', function () {
 				Groups.get('foobar?', {}, function (err, groupObj) {
 					assert.ifError(err);
 					assert.strictEqual(groupObj, null);
-
 					done();
 				});
 			});
@@ -436,11 +472,42 @@ describe('Groups', function () {
 		it('should also remove the members set', function (done) {
 			db.exists('group:foo:members', function (err, exists) {
 				assert.ifError(err);
-
 				assert.strictEqual(false, exists);
-
 				done();
 			});
+		});
+
+		it('should remove group from privilege groups', function (done) {
+			const privileges = require('../src/privileges');
+			const cid = 1;
+			const groupName = '1';
+			const uid = 1;
+			async.waterfall([
+				function (next) {
+					Groups.create({ name: groupName }, next);
+				},
+				function (groupData, next) {
+					privileges.categories.give(['topics:create'], cid, groupName, next);
+				},
+				function (next) {
+					Groups.isMember(groupName, 'cid:1:privileges:groups:topics:create', next);
+				},
+				function (isMember, next) {
+					assert(isMember);
+					Groups.destroy(groupName, next);
+				},
+				function (next) {
+					Groups.isMember(groupName, 'cid:1:privileges:groups:topics:create', next);
+				},
+				function (isMember, next) {
+					assert(!isMember);
+					Groups.isMember(uid, 'registered-users', next);
+				},
+				function (isMember, next) {
+					assert(isMember);
+					next();
+				},
+			], done);
 		});
 	});
 
@@ -483,6 +550,45 @@ describe('Groups', function () {
 					Groups.join('Test', undefined, function (err) {
 						assert.equal(err.message, '[[error:invalid-uid]]');
 						done();
+					});
+				});
+			});
+		});
+
+		it('should add user to multiple groups', function (done) {
+			var groupNames = ['test-hidden1', 'Test', 'test-hidden2', 'empty group'];
+			Groups.create({ name: 'empty group' }, function (err) {
+				assert.ifError(err);
+				Groups.join(groupNames, testUid, function (err) {
+					assert.ifError(err);
+					Groups.isMemberOfGroups(testUid, groupNames, function (err, isMembers) {
+						assert.ifError(err);
+						assert(isMembers.every(Boolean));
+						db.sortedSetScores('groups:visible:memberCount', groupNames, function (err, memberCounts) {
+							assert.ifError(err);
+							// hidden groups are not in "groups:visible:memberCount" so they are null
+							assert.deepEqual(memberCounts, [null, 3, null, 1]);
+							done();
+						});
+					});
+				});
+			});
+		});
+
+		it('should set group title when user joins the group', function (done) {
+			var groupName = 'this will be title';
+			User.create({ username: 'needstitle' }, function (err, uid) {
+				assert.ifError(err);
+				Groups.create({ name: groupName }, function (err) {
+					assert.ifError(err);
+					Groups.join([groupName], uid, function (err) {
+						assert.ifError(err);
+						User.getUserData(uid, function (err, data) {
+							assert.ifError(err);
+							assert.equal(data.groupTitle, '["' + groupName + '"]');
+							assert.deepEqual(data.groupTitleArray, [groupName]);
+							done();
+						});
 					});
 				});
 			});
@@ -632,9 +738,19 @@ describe('Groups', function () {
 		it('should fail to join if group is private and join requests are disabled', function (done) {
 			meta.config.allowPrivateGroups = 1;
 			socketGroups.join({ uid: testUid }, { groupName: 'PrivateNoJoin' }, function (err) {
-				assert.equal(err.message, '[[error:join-requests-disabled]]');
+				assert.equal(err.message, '[[error:group-join-disabled]]');
 				done();
 			});
+		});
+
+		it('should fail to leave if group is private and leave is disabled', async () => {
+			await socketGroups.join({ uid: testUid }, { groupName: 'PrivateNoLeave' });
+
+			try {
+				await socketGroups.leave({ uid: testUid }, { groupName: 'PrivateNoLeave' });
+			} catch (err) {
+				assert.equal(err.message, '[[error:group-leave-disabled]]');
+			}
 		});
 
 		it('should join if user is admin', function (done) {
@@ -772,9 +888,9 @@ describe('Groups', function () {
 				assert.ifError(err);
 				socketGroups.issueMassInvite({ uid: adminUid }, { groupName: 'PrivateCanJoin', usernames: 'invite1, invite2' }, function (err) {
 					assert.ifError(err);
-					Groups.isInvited(uid, 'PrivateCanJoin', function (err, isInvited) {
+					Groups.isInvited([adminUid, uid], 'PrivateCanJoin', function (err, isInvited) {
 						assert.ifError(err);
-						assert(isInvited);
+						assert.deepStrictEqual(isInvited, [false, true]);
 						done();
 					});
 				});
@@ -887,31 +1003,21 @@ describe('Groups', function () {
 		});
 
 		it('should fail to create group if group creation is disabled', function (done) {
-			var oldValue = meta.config.allowGroupCreation;
-			meta.config.allowGroupCreation = 0;
-			socketGroups.create({ uid: 1 }, {}, function (err) {
-				assert.equal(err.message, '[[error:group-creation-disabled]]');
-				meta.config.allowGroupCreation = oldValue;
+			socketGroups.create({ uid: testUid }, {}, function (err) {
+				assert.equal(err.message, '[[error:no-privileges]]');
 				done();
 			});
 		});
 
 		it('should fail to create group if name is privilege group', function (done) {
-			var oldValue = meta.config.allowGroupCreation;
-			meta.config.allowGroupCreation = 1;
 			socketGroups.create({ uid: 1 }, { name: 'cid:1:privileges:groups:find' }, function (err) {
 				assert.equal(err.message, '[[error:invalid-group-name]]');
-				meta.config.allowGroupCreation = oldValue;
 				done();
 			});
 		});
 
-
 		it('should create/update group', function (done) {
-			var oldValue = meta.config.allowGroupCreation;
-			meta.config.allowGroupCreation = 1;
 			socketGroups.create({ uid: adminUid }, { name: 'createupdategroup' }, function (err, groupData) {
-				meta.config.allowGroupCreation = oldValue;
 				assert.ifError(err);
 				assert(groupData);
 				var data = {
@@ -943,10 +1049,7 @@ describe('Groups', function () {
 		});
 
 		it('should fail to create a group with name guests', function (done) {
-			var oldValue = meta.config.allowGroupCreation;
-			meta.config.allowGroupCreation = 1;
 			socketGroups.create({ uid: adminUid }, { name: 'guests' }, function (err) {
-				meta.config.allowGroupCreation = oldValue;
 				assert.equal(err.message, '[[error:invalid-group-name]]');
 				done();
 			});
@@ -1058,7 +1161,8 @@ describe('Groups', function () {
 				assert.equal(groupData.name, 'newgroup');
 				assert.equal(groupData.description, 'group created by admin');
 				assert.equal(groupData.ownerUid, adminUid);
-				assert.equal(groupData.private, true);
+				assert.equal(groupData.private, 1);
+				assert.equal(groupData.hidden, 0);
 				assert.equal(groupData.memberCount, 1);
 				done();
 			});
@@ -1193,13 +1297,20 @@ describe('Groups', function () {
 		it('should upload group cover image from file', function (done) {
 			var data = {
 				groupName: 'Test',
-				file: imagePath,
+				file: {
+					path: imagePath,
+					type: 'image/png',
+				},
 			};
 			socketGroups.cover.update({ uid: adminUid }, data, function (err, data) {
 				assert.ifError(err);
 				Groups.getGroupFields('Test', ['cover:url'], function (err, groupData) {
 					assert.ifError(err);
-					assert.equal(data.url, groupData['cover:url']);
+					assert.equal(nconf.get('relative_path') + data.url, groupData['cover:url']);
+					if (nconf.get('relative_path')) {
+						assert(!data.url.startsWith(nconf.get('relative_path')));
+						assert(groupData['cover:url'].startsWith(nconf.get('relative_path')), groupData['cover:url']);
+					}
 					done();
 				});
 			});
@@ -1215,9 +1326,20 @@ describe('Groups', function () {
 				assert.ifError(err);
 				Groups.getGroupFields('Test', ['cover:url'], function (err, groupData) {
 					assert.ifError(err);
-					assert.equal(data.url, groupData['cover:url']);
+					assert.equal(nconf.get('relative_path') + data.url, groupData['cover:url']);
 					done();
 				});
+			});
+		});
+
+		it('should fail to upload group cover with invalid image', function (done) {
+			var data = {
+				groupName: 'Test',
+				imageData: 'data:image/svg;base64,iVBORw0KGgoAAAANSUhEUgAAABwA',
+			};
+			socketGroups.cover.update({ uid: adminUid }, data, function (err, data) {
+				assert.equal(err.message, '[[error:invalid-image]]');
+				done();
 			});
 		});
 
@@ -1263,7 +1385,7 @@ describe('Groups', function () {
 					assert.equal(res.statusCode, 200);
 					Groups.getGroupFields('Test', ['cover:url'], function (err, groupData) {
 						assert.ifError(err);
-						assert.equal(body[0].url, groupData['cover:url']);
+						assert.equal(nconf.get('relative_path') + body[0].url, groupData['cover:url']);
 						done();
 					});
 				});
@@ -1287,7 +1409,7 @@ describe('Groups', function () {
 		it('should remove cover', function (done) {
 			socketGroups.cover.remove({ uid: adminUid }, { groupName: 'Test' }, function (err) {
 				assert.ifError(err);
-				Groups.getGroupFields('Test', ['cover:url'], function (err, groupData) {
+				db.getObjectFields('group:Test', ['cover:url'], function (err, groupData) {
 					assert.ifError(err);
 					assert(!groupData['cover:url']);
 					done();

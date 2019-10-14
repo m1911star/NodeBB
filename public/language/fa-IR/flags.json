@@ -9,6 +9,7 @@
 	"updated": "به روز رسانی شد",
 	"target-purged": "محتوای این گزارش حذف شده است و در دسترس نیست.",
 
+	"graph-label": "Daily Flags",
 	"quick-filters": "فیلتر های سریع",
 	"filter-active": "یک یا تعداد بیشتری از فیلتر ها در لیست گزارش ها فعال هستند",
 	"filter-reset": "حذف فیلتر ها",
@@ -18,7 +19,7 @@
 	"filter-type": "نوع گزارش",
 	"filter-type-all": "تمام محتوا",
 	"filter-type-post": "پست",
-	"filter-type-user": "User",
+	"filter-type-user": "کاربر",
 	"filter-state": "وضعیت",
 	"filter-assignee": "UID رسیدگی کننده",
 	"filter-cid": "دسته بندی",

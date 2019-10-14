@@ -1,15 +1,15 @@
 'use strict';
 
-var async = require('async');
-var nconf = require('nconf');
-var validator = require('validator');
+const nconf = require('nconf');
+const validator = require('validator');
 
-var meta = require('../meta');
-var user = require('../user');
-var plugins = require('../plugins');
-var helpers = require('./helpers');
+const meta = require('../meta');
+const user = require('../user');
+const plugins = require('../plugins');
+const privileges = require('../privileges');
+const helpers = require('./helpers');
 
-var Controllers = module.exports;
+const Controllers = module.exports;
 
 Controllers.ping = require('./ping');
 Controllers.home = require('./home');
@@ -39,32 +39,51 @@ Controllers.errors = require('./errors');
 Controllers.composer = require('./composer');
 
 Controllers.reset = function (req, res, next) {
+	if (meta.config['password:disableEdit']) {
+		return helpers.notAllowed(req, res);
+	}
+
+	res.locals.metaTags = {
+		...res.locals.metaTags,
+		name: 'robots',
+		content: 'noindex',
+	};
+
+	const renderReset = function (code, valid) {
+		res.render('reset_code', {
+			valid: valid,
+			displayExpiryNotice: req.session.passwordExpired,
+			code: code,
+			minimumPasswordLength: meta.config.minimumPasswordLength,
+			minimumPasswordStrength: meta.config.minimumPasswordStrength,
+			breadcrumbs: helpers.buildBreadcrumbs([
+				{
+					text: '[[reset_password:reset_password]]',
+					url: '/reset',
+				},
+				{
+					text: '[[reset_password:update_password]]',
+				},
+			]),
+			title: '[[pages:reset]]',
+		});
+		delete req.session.passwordExpired;
+	};
+
 	if (req.params.code) {
-		async.waterfall([
-			function (next) {
-				user.reset.validate(req.params.code, next);
-			},
-			function (valid) {
-				res.render('reset_code', {
-					valid: valid,
-					displayExpiryNotice: req.session.passwordExpired,
-					code: req.params.code,
-					minimumPasswordLength: parseInt(meta.config.minimumPasswordLength, 10),
-					minimumPasswordStrength: parseInt(meta.config.minimumPasswordStrength, 10),
-					breadcrumbs: helpers.buildBreadcrumbs([
-						{
-							text: '[[reset_password:reset_password]]',
-							url: '/reset',
-						},
-						{
-							text: '[[reset_password:update_password]]',
-						},
-					]),
-					title: '[[pages:reset]]',
-				});
-				delete req.session.passwordExpired;
-			},
-		], next);
+		req.session.reset_code = req.params.code;
+	}
+
+	if (req.session.reset_code) {
+		// Validate and save to local variable before removing from session
+		user.reset.validate(req.session.reset_code, function (err, valid) {
+			if (err) {
+				return next(err);
+			}
+
+			renderReset(req.session.reset_code, valid);
+			delete req.session.reset_code;
+		});
 	} else {
 		res.render('reset', {
 			code: null,
@@ -77,12 +96,11 @@ Controllers.reset = function (req, res, next) {
 };
 
 Controllers.login = function (req, res, next) {
-	var data = {};
+	var data = { loginFormEntry: [] };
 	var loginStrategies = require('../routes/authentication').getLoginStrategies();
 	var registrationType = meta.config.registrationType || 'normal';
-
 	var allowLoginWith = (meta.config.allowLoginWith || 'username-email');
-	var returnTo = (req.headers['x-return-to'] || '').replace(nconf.get('base_url'), '');
+	var returnTo = (req.headers['x-return-to'] || '').replace(nconf.get('base_url') + nconf.get('relative_path'), '');
 
 	var errorText;
 	if (req.query.error === 'csrf-invalid') {
@@ -97,124 +115,110 @@ Controllers.login = function (req, res, next) {
 
 	data.alternate_logins = loginStrategies.length > 0;
 	data.authentication = loginStrategies;
-	data.allowLocalLogin = parseInt(meta.config.allowLocalLogin, 10) === 1 || parseInt(req.query.local, 10) === 1;
-	data.allowRegistration = registrationType === 'normal' || registrationType === 'admin-approval' || registrationType === 'admin-approval-ip';
+	data.allowRegistration = registrationType === 'normal';
 	data.allowLoginWith = '[[login:' + allowLoginWith + ']]';
 	data.breadcrumbs = helpers.buildBreadcrumbs([{
 		text: '[[global:login]]',
 	}]);
 	data.error = req.flash('error')[0] || errorText;
 	data.title = '[[pages:login]]';
+	data.allowPasswordReset = !meta.config['password:disableEdit'];
 
-	if (!data.allowLocalLogin && !data.allowRegistration && data.alternate_logins && data.authentication.length === 1) {
-		if (res.locals.isAPI) {
-			return helpers.redirect(res, {
-				external: nconf.get('relative_path') + data.authentication[0].url,
-			});
+	privileges.global.canGroup('local:login', 'registered-users', function (err, hasLoginPrivilege) {
+		if (err) {
+			return next(err);
 		}
-		return res.redirect(nconf.get('relative_path') + data.authentication[0].url);
-	}
-	if (req.loggedIn) {
-		user.getUserFields(req.uid, ['username', 'email'], function (err, user) {
-			if (err) {
-				return next(err);
+
+		data.allowLocalLogin = hasLoginPrivilege || parseInt(req.query.local, 10) === 1;
+		if (!data.allowLocalLogin && !data.allowRegistration && data.alternate_logins && data.authentication.length === 1) {
+			if (res.locals.isAPI) {
+				return helpers.redirect(res, {
+					external: nconf.get('relative_path') + data.authentication[0].url,
+				});
 			}
-			data.username = allowLoginWith === 'email' ? user.email : user.username;
-			data.alternate_logins = false;
+			return res.redirect(nconf.get('relative_path') + data.authentication[0].url);
+		}
+		if (req.loggedIn) {
+			user.getUserFields(req.uid, ['username', 'email'], function (err, user) {
+				if (err) {
+					return next(err);
+				}
+				data.username = allowLoginWith === 'email' ? user.email : user.username;
+				data.alternate_logins = false;
+				res.render('login', data);
+			});
+		} else {
 			res.render('login', data);
-		});
-	} else {
-		res.render('login', data);
-	}
+		}
+	});
 };
 
-Controllers.register = function (req, res, next) {
-	var registrationType = meta.config.registrationType || 'normal';
+Controllers.register = async function (req, res, next) {
+	const registrationType = meta.config.registrationType || 'normal';
 
 	if (registrationType === 'disabled') {
-		return next();
+		return setImmediate(next);
 	}
 
-	var errorText;
+	let errorText;
 	if (req.query.error === 'csrf-invalid') {
 		errorText = '[[error:csrf-invalid]]';
 	}
+	try {
+		if (registrationType === 'invite-only' || registrationType === 'admin-invite-only') {
+			await user.verifyInvitation(req.query);
+		}
 
-	async.waterfall([
-		function (next) {
-			if (registrationType === 'invite-only' || registrationType === 'admin-invite-only') {
-				user.verifyInvitation(req.query, next);
-			} else {
-				next();
-			}
-		},
-		function (next) {
-			plugins.fireHook('filter:parse.post', {
-				postData: {
-					content: meta.config.termsOfUse || '',
-				},
-			}, next);
-		},
-		function (termsOfUse) {
-			var loginStrategies = require('../routes/authentication').getLoginStrategies();
-			var data = {
-				'register_window:spansize': loginStrategies.length ? 'col-md-6' : 'col-md-12',
-				alternate_logins: !!loginStrategies.length,
-			};
+		const loginStrategies = require('../routes/authentication').getLoginStrategies();
+		res.render('register', {
+			'register_window:spansize': loginStrategies.length ? 'col-md-6' : 'col-md-12',
+			alternate_logins: !!loginStrategies.length,
+			authentication: loginStrategies,
 
-			data.authentication = loginStrategies;
-
-			data.minimumUsernameLength = parseInt(meta.config.minimumUsernameLength, 10);
-			data.maximumUsernameLength = parseInt(meta.config.maximumUsernameLength, 10);
-			data.minimumPasswordLength = parseInt(meta.config.minimumPasswordLength, 10);
-			data.minimumPasswordStrength = parseInt(meta.config.minimumPasswordStrength || 1, 10);
-			data.termsOfUse = termsOfUse.postData.content;
-			data.breadcrumbs = helpers.buildBreadcrumbs([{
+			minimumUsernameLength: meta.config.minimumUsernameLength,
+			maximumUsernameLength: meta.config.maximumUsernameLength,
+			minimumPasswordLength: meta.config.minimumPasswordLength,
+			minimumPasswordStrength: meta.config.minimumPasswordStrength,
+			breadcrumbs: helpers.buildBreadcrumbs([{
 				text: '[[register:register]]',
-			}]);
-			data.regFormEntry = [];
-			data.error = req.flash('error')[0] || errorText;
-			data.title = '[[pages:register]]';
-
-			res.render('register', data);
-		},
-	], next);
+			}]),
+			regFormEntry: [],
+			error: req.flash('error')[0] || errorText,
+			title: '[[pages:register]]',
+		});
+	} catch (err) {
+		next(err);
+	}
 };
 
-Controllers.registerInterstitial = function (req, res, next) {
+Controllers.registerInterstitial = async function (req, res, next) {
 	if (!req.session.hasOwnProperty('registration')) {
 		return res.redirect(nconf.get('relative_path') + '/register');
 	}
+	try {
+		const data = await plugins.fireHook('filter:register.interstitial', {
+			userData: req.session.registration,
+			interstitials: [],
+		});
 
-	async.waterfall([
-		function (next) {
-			plugins.fireHook('filter:register.interstitial', {
-				userData: req.session.registration,
-				interstitials: [],
-			}, next);
-		},
-		function (data, next) {
-			if (!data.interstitials.length) {
-				// No interstitials, redirect to home
-				delete req.session.registration;
-				return res.redirect(nconf.get('relative_path') + '/');
-			}
-			var renders = data.interstitials.map(function (interstitial) {
-				return async.apply(req.app.render.bind(req.app), interstitial.template, interstitial.data || {});
-			});
+		if (!data.interstitials.length) {
+			// No interstitials, redirect to home
+			const returnTo = req.session.returnTo || req.session.registration.returnTo;
+			delete req.session.registration;
+			return helpers.redirect(res, returnTo || '/');
+		}
 
+		const renders = data.interstitials.map(interstitial => req.app.renderAsync(interstitial.template, interstitial.data || {}));
+		const sections = await Promise.all(renders);
 
-			async.parallel(renders, next);
-		},
-		function (sections) {
-			var errors = req.flash('errors');
-			res.render('registerComplete', {
-				title: '[[pages:registration-complete]]',
-				errors: errors,
-				sections: sections,
-			});
-		},
-	], next);
+		res.render('registerComplete', {
+			title: '[[pages:registration-complete]]',
+			errors: req.flash('errors'),
+			sections: sections,
+		});
+	} catch (err) {
+		next(err);
+	}
 };
 
 Controllers.confirmEmail = function (req, res) {
@@ -235,11 +239,12 @@ Controllers.robots = function (req, res) {
 		res.send('User-agent: *\n' +
 			'Disallow: ' + nconf.get('relative_path') + '/admin/\n' +
 			'Disallow: ' + nconf.get('relative_path') + '/reset/\n' +
+			'Disallow: ' + nconf.get('relative_path') + '/compose\n' +
 			'Sitemap: ' + nconf.get('url') + '/sitemap.xml');
 	}
 };
 
-Controllers.manifest = function (req, res) {
+Controllers.manifest = function (req, res, next) {
 	var manifest = {
 		name: meta.config.title || 'NodeBB',
 		start_url: nconf.get('relative_path') + '/',
@@ -281,8 +286,12 @@ Controllers.manifest = function (req, res) {
 			density: 4.0,
 		});
 	}
-
-	res.status(200).json(manifest);
+	plugins.fireHook('filter:manifest.build', { req: req, res: res, manifest: manifest }, function (err, data) {
+		if (err) {
+			return next(err);
+		}
+		res.status(200).json(data.manifest);
+	});
 };
 
 Controllers.outgoing = function (req, res, next) {
@@ -303,11 +312,16 @@ Controllers.outgoing = function (req, res, next) {
 	});
 };
 
-Controllers.termsOfUse = function (req, res, next) {
+Controllers.termsOfUse = async function (req, res, next) {
 	if (!meta.config.termsOfUse) {
 		return next();
 	}
+	const termsOfUse = await plugins.fireHook('filter:parse.post', {
+		postData: {
+			content: meta.config.termsOfUse || '',
+		},
+	});
 	res.render('tos', {
-		termsOfUse: meta.config.termsOfUse,
+		termsOfUse: termsOfUse.postData.content,
 	});
 };

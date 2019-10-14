@@ -8,12 +8,11 @@ define('forum/topic', [
 	'forum/topic/events',
 	'forum/topic/posts',
 	'forum/topic/images',
-	'forum/topic/replies',
 	'navigator',
 	'sort',
 	'components',
 	'storage',
-], function (infinitescroll, threadTools, postTools, events, posts, images, replies, navigator, sort, components, storage) {
+], function (infinitescroll, threadTools, postTools, events, posts, images, navigator, sort, components, storage) {
 	var	Topic = {};
 	var currentUrl = '';
 
@@ -45,11 +44,10 @@ define('forum/topic', [
 
 		app.enterRoom('topic_' + tid);
 
-		posts.processPage(components.get('post'));
+		posts.onTopicPageLoad(components.get('post'));
 
 		postTools.init(tid);
 		threadTools.init(tid);
-		replies.init(tid);
 		events.init();
 
 		sort.handleSort('topicPostSort', 'user.setTopicSort', 'topic/' + ajaxify.data.slug);
@@ -59,10 +57,11 @@ define('forum/topic', [
 		}
 
 		addBlockQuoteHandler();
-
 		addParentHandler();
+		addDropupHandler();
+		addRepliesHandler();
 
-		navigator.init('[component="post"]', ajaxify.data.postcount, Topic.toTop, Topic.toBottom, Topic.navigatorCallback, Topic.calculateIndex);
+		navigator.init('[component="post"]', ajaxify.data.postcount, Topic.toTop, Topic.toBottom, Topic.navigatorCallback);
 
 		handleBookmark(tid);
 
@@ -74,18 +73,21 @@ define('forum/topic', [
 	};
 
 	function handleTopicSearch() {
-		require(['search', 'mousetrap'], function (search, mousetrap) {
-			$('.topic-search').off('click')
-				.on('click', '.prev', function () {
+		$('.topic-search').off('click')
+			.on('click', '.prev', function () {
+				require(['search'], function (search) {
 					search.topicDOM.prev();
-				})
-				.on('click', '.next', function () {
+				});
+			})
+			.on('click', '.next', function () {
+				require(['search'], function (search) {
 					search.topicDOM.next();
 				});
+			});
 
-			mousetrap.bind('ctrl+f', function (e) {
-				if (config.topicSearchEnabled) {
-					// If in topic, open search window and populate, otherwise regular behaviour
+		if (config.topicSearchEnabled) {
+			require(['mousetrap'], function (mousetrap) {
+				mousetrap.bind('ctrl+f', function (e) {
 					var match = ajaxify.currentPage.match(/^topic\/([\d]+)/);
 					var tid;
 					if (match) {
@@ -94,9 +96,9 @@ define('forum/topic', [
 						$('#search-fields input').val('in:topic-' + tid + ' ');
 						app.prepareSearch();
 					}
-				}
+				});
 			});
-		});
+		}
 	}
 
 	Topic.toTop = function () {
@@ -108,9 +110,7 @@ define('forum/topic', [
 			if (err) {
 				return app.alertError(err.message);
 			}
-			if (config.topicPostSort !== 'oldest_to_newest') {
-				postCount = 2;
-			}
+
 			navigator.scrollBottom(postCount - 1);
 		});
 	};
@@ -120,7 +120,7 @@ define('forum/topic', [
 		var bookmark = ajaxify.data.bookmark || storage.getItem('topic:' + tid + ':bookmark');
 		var postIndex = ajaxify.data.postIndex;
 
-		if (postIndex > 0) {
+		if (postIndex > 1) {
 			if (components.get('post/anchor', postIndex - 1).length) {
 				return navigator.scrollToPostIndex(postIndex - 1, true, 0);
 			}
@@ -166,6 +166,26 @@ define('forum/topic', [
 		});
 	}
 
+	function addDropupHandler() {
+		// Locate all dropdowns
+		var target = $('#content .dropdown-menu').parent();
+
+		// Toggle dropup if past 50% of screen
+		$(target).on('show.bs.dropdown', function () {
+			var dropUp = this.getBoundingClientRect().top > ($(window).height() / 2);
+			$(this).toggleClass('dropup', dropUp);
+		});
+	}
+
+	function addRepliesHandler() {
+		$('[component="topic"]').on('click', '[component="post/reply-count"]', function () {
+			var btn = $(this);
+			require(['forum/topic/replies'], function (replies) {
+				replies.init(btn);
+			});
+		});
+	}
+
 	function updateTopicTitle() {
 		var span = components.get('navbar/title').find('span');
 		if ($(window).scrollTop() > 50 && span.hasClass('hidden')) {
@@ -178,14 +198,7 @@ define('forum/topic', [
 		}
 	}
 
-	Topic.calculateIndex = function (index, elementCount) {
-		if (index !== 1 && config.topicPostSort !== 'oldest_to_newest') {
-			return elementCount - index + 2;
-		}
-		return index;
-	};
-
-	Topic.navigatorCallback = function (index, elementCount, threshold) {
+	Topic.navigatorCallback = function (index, elementCount) {
 		var path = ajaxify.removeRelativePath(window.location.pathname.slice(1));
 		if (!path.startsWith('topic')) {
 			return;
@@ -194,8 +207,6 @@ define('forum/topic', [
 		if (navigator.scrollActive) {
 			return;
 		}
-
-		images.loadImages(threshold);
 
 		var newUrl = 'topic/' + ajaxify.data.slug + (index > 1 ? ('/' + index) : '');
 

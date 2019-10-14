@@ -9,23 +9,41 @@ var pkg = require('../package.json');
 var dirname = require('./cli/paths').baseDir;
 
 function setupWinston() {
-	winston.remove(winston.transports.Console);
-	winston.add(winston.transports.Console, {
-		colorize: nconf.get('log-colorize') !== 'false',
-		timestamp: function () {
-			var date = new Date();
-			return nconf.get('json-logging') ? date.toJSON() :
-				date.toISOString() + ' [' + global.process.pid + ']';
-		},
+	if (!winston.format) {
+		return;
+	}
+
+	var formats = [];
+	if (nconf.get('log-colorize') !== 'false') {
+		formats.push(winston.format.colorize());
+	}
+
+	if (nconf.get('json-logging')) {
+		formats.push(winston.format.timestamp());
+		formats.push(winston.format.json());
+	} else {
+		const timestampFormat = winston.format((info) => {
+			var dateString = new Date().toISOString() + ' [' + nconf.get('port') + '/' + global.process.pid + ']';
+			info.level = dateString + ' - ' + info.level;
+			return info;
+		});
+		formats.push(timestampFormat());
+		formats.push(winston.format.splat());
+		formats.push(winston.format.simple());
+	}
+
+	winston.configure({
 		level: nconf.get('log-level') || (global.env === 'production' ? 'info' : 'verbose'),
-		json: !!nconf.get('json-logging'),
-		stringify: !!nconf.get('json-logging'),
+		format: winston.format.combine.apply(null, formats),
+		transports: [
+			new winston.transports.Console({
+				handleExceptions: true,
+			}),
+		],
 	});
 }
 
 function loadConfig(configFile) {
-	winston.verbose('* using configuration stored in: %s', configFile);
-
 	nconf.file({
 		file: configFile,
 	});
@@ -51,6 +69,7 @@ function loadConfig(configFile) {
 	nconf.set('base_templates_path', path.join(nconf.get('themes_path'), 'nodebb-theme-persona/templates'));
 
 	nconf.set('upload_path', path.resolve(nconf.get('base_dir'), nconf.get('upload_path')));
+	nconf.set('upload_url', '/assets/uploads');
 
 	if (nconf.get('url')) {
 		nconf.set('url_parsed', url.parse(nconf.get('url')));
@@ -67,7 +86,7 @@ function loadConfig(configFile) {
 	});
 	nconf.stores.env.readOnly = true;
 
-	nconf.set('runJobs', nconf.get('isPrimary') && !nconf.get('jobsDisabled'));
+	nconf.set('runJobs', nconf.get('isPrimary') === 'true' && !nconf.get('jobsDisabled'));
 }
 
 function versionCheck() {

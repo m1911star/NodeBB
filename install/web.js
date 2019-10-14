@@ -15,14 +15,31 @@ var Benchpress = require('benchpressjs');
 var app = express();
 var server;
 
-winston.add(winston.transports.File, {
-	filename: 'logs/webinstall.log',
-	colorize: true,
-	timestamp: function () {
-		var date = new Date();
-		return date.getDate() + '/' + (date.getMonth() + 1) + ' ' + date.toTimeString().substr(0, 5) + ' [' + global.process.pid + ']';
-	},
+var formats = [
+	winston.format.colorize(),
+];
+
+const timestampFormat = winston.format((info) => {
+	var dateString = new Date().toISOString() + ' [' + global.process.pid + ']';
+	info.level = dateString + ' - ' + info.level;
+	return info;
+});
+formats.push(timestampFormat());
+formats.push(winston.format.splat());
+formats.push(winston.format.simple());
+
+winston.configure({
 	level: 'verbose',
+	format: winston.format.combine.apply(null, formats),
+	transports: [
+		new winston.transports.Console({
+			handleExceptions: true,
+		}),
+		new winston.transports.File({
+			filename: 'logs/webinstall.log',
+			handleExceptions: true,
+		}),
+	],
 });
 
 var web = module.exports;
@@ -33,6 +50,7 @@ var scripts = [
 	'public/vendor/xregexp/unicode/unicode-base.js',
 	'public/src/utils.js',
 	'public/src/installer/install.js',
+	'node_modules/zxcvbn/dist/zxcvbn.js',
 ];
 
 var installing = false;
@@ -42,7 +60,7 @@ var launchUrl;
 
 web.install = function (port) {
 	port = port || 4567;
-	winston.info('Launching web installer on port', port);
+	winston.info('Launching web installer on port ' + port);
 
 	app.use(express.static('public', {}));
 	app.engine('tpl', function (filepath, options, callback) {
@@ -90,7 +108,7 @@ function ping(req, res) {
 }
 
 function welcome(req, res) {
-	var dbs = ['redis', 'mongo'];
+	var dbs = ['redis', 'mongo', 'postgres'];
 	var databases = dbs.map(function (databaseName) {
 		var questions = require('../src/database/' + databaseName).questions.filter(function (question) {
 			return question && !question.hideOnWebInstall;
@@ -114,6 +132,7 @@ function welcome(req, res) {
 		success: success,
 		values: req.body,
 		minimumPasswordLength: defaults.minimumPasswordLength,
+		minimumPasswordStrength: defaults.minimumPasswordStrength,
 		installing: installing,
 	});
 }
@@ -164,7 +183,7 @@ function install(req, res) {
 function launch(req, res) {
 	res.json({});
 	server.close();
-
+	req.setTimeout(0);
 	var child;
 
 	if (!nconf.get('launchCmd')) {

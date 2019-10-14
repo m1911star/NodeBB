@@ -1,6 +1,5 @@
 'use strict';
 
-var async = require('async');
 var validator = require('validator');
 
 var db = require('../database');
@@ -8,123 +7,98 @@ var categories = require('../categories');
 var utils = require('../utils');
 var translator = require('../translator');
 
+const intFields = [
+	'tid', 'cid', 'uid', 'mainPid', 'postcount',
+	'viewcount', 'deleted', 'locked', 'pinned',
+	'timestamp', 'upvotes', 'downvotes', 'lastposttime',
+];
+
+module.exports = function (Topics) {
+	Topics.getTopicsFields = async function (tids, fields) {
+		if (!Array.isArray(tids) || !tids.length) {
+			return [];
+		}
+		const keys = tids.map(tid => 'topic:' + tid);
+		const topics = await (fields.length ? db.getObjectsFields(keys, fields) : db.getObjects(keys));
+		topics.forEach(topic => modifyTopic(topic, fields));
+		return topics;
+	};
+
+	Topics.getTopicField = async function (tid, field) {
+		const topic = await Topics.getTopicFields(tid, [field]);
+		return topic ? topic[field] : null;
+	};
+
+	Topics.getTopicFields = async function (tid, fields) {
+		const topics = await Topics.getTopicsFields([tid], fields);
+		return topics ? topics[0] : null;
+	};
+
+	Topics.getTopicData = async function (tid) {
+		const topics = await Topics.getTopicsFields([tid], []);
+		return topics && topics.length ? topics[0] : null;
+	};
+
+	Topics.getTopicsData = async function (tids) {
+		return await Topics.getTopicsFields(tids, []);
+	};
+
+	Topics.getCategoryData = async function (tid) {
+		const cid = await Topics.getTopicField(tid, 'cid');
+		return await categories.getCategoryData(cid);
+	};
+
+	Topics.setTopicField = async function (tid, field, value) {
+		await db.setObjectField('topic:' + tid, field, value);
+	};
+
+	Topics.setTopicFields = async function (tid, data) {
+		await db.setObject('topic:' + tid, data);
+	};
+
+	Topics.deleteTopicField = async function (tid, field) {
+		await db.deleteObjectField('topic:' + tid, field);
+	};
+
+	Topics.deleteTopicFields = async function (tid, fields) {
+		await db.deleteObjectFields('topic:' + tid, fields);
+	};
+};
+
 function escapeTitle(topicData) {
-	if (!topicData) {
-		return;
-	}
-	if (topicData.title) {
-		topicData.title = translator.escape(validator.escape(topicData.title.toString()));
-	}
-	if (topicData.titleRaw) {
-		topicData.titleRaw = translator.escape(topicData.titleRaw);
+	if (topicData) {
+		if (topicData.title) {
+			topicData.title = translator.escape(validator.escape(topicData.title));
+		}
+		if (topicData.titleRaw) {
+			topicData.titleRaw = translator.escape(topicData.titleRaw);
+		}
 	}
 }
 
-module.exports = function (Topics) {
-	Topics.getTopicField = function (tid, field, callback) {
-		async.waterfall([
-			function (next) {
-				db.getObjectField('topic:' + tid, field, next);
-			},
-			function (value, next) {
-				if (field === 'title') {
-					value = translator.escape(validator.escape(String(value)));
-				}
-				next(null, value);
-			},
-		], callback);
-	};
+function modifyTopic(topic, fields) {
+	if (!topic) {
+		return;
+	}
 
-	Topics.getTopicFields = function (tid, fields, callback) {
-		async.waterfall([
-			function (next) {
-				db.getObjectFields('topic:' + tid, fields, next);
-			},
-			function (topic, next) {
-				escapeTitle(topic);
-				next(null, topic);
-			},
-		], callback);
-	};
+	db.parseIntFields(topic, intFields, fields);
 
-	Topics.getTopicsFields = function (tids, fields, callback) {
-		if (!Array.isArray(tids) || !tids.length) {
-			return callback(null, []);
-		}
-		var keys = tids.map(function (tid) {
-			return 'topic:' + tid;
-		});
-		async.waterfall([
-			function (next) {
-				if (fields.length) {
-					db.getObjectsFields(keys, fields, next);
-				} else {
-					db.getObjects(keys, next);
-				}
-			},
-			function (topics, next) {
-				topics.forEach(modifyTopic);
-				next(null, topics);
-			},
-		], callback);
-	};
-
-	Topics.getTopicData = function (tid, callback) {
-		async.waterfall([
-			function (next) {
-				db.getObject('topic:' + tid, next);
-			},
-			function (topic, next) {
-				if (!topic) {
-					return next(null, null);
-				}
-				modifyTopic(topic);
-				next(null, topic);
-			},
-		], callback);
-	};
-
-	Topics.getTopicsData = function (tids, callback) {
-		Topics.getTopicsFields(tids, [], callback);
-	};
-
-	function modifyTopic(topic) {
-		if (!topic) {
-			return;
-		}
-
+	if (topic.hasOwnProperty('title')) {
 		topic.titleRaw = topic.title;
 		topic.title = String(topic.title);
-		escapeTitle(topic);
+	}
+
+	escapeTitle(topic);
+
+	if (topic.hasOwnProperty('timestamp')) {
 		topic.timestampISO = utils.toISOString(topic.timestamp);
+	}
+
+	if (topic.hasOwnProperty('lastposttime')) {
 		topic.lastposttimeISO = utils.toISOString(topic.lastposttime);
 	}
 
-	Topics.getCategoryData = function (tid, callback) {
-		async.waterfall([
-			function (next) {
-				Topics.getTopicField(tid, 'cid', next);
-			},
-			function (cid, next) {
-				categories.getCategoryData(cid, next);
-			},
-		], callback);
-	};
-
-	Topics.setTopicField = function (tid, field, value, callback) {
-		db.setObjectField('topic:' + tid, field, value, callback);
-	};
-
-	Topics.setTopicFields = function (tid, data, callback) {
-		callback = callback || function () {};
-		db.setObject('topic:' + tid, data, callback);
-	};
-
-	Topics.deleteTopicField = function (tid, field, callback) {
-		db.deleteObjectField('topic:' + tid, field, callback);
-	};
-
-	Topics.deleteTopicFields = function (tid, fields, callback) {
-		db.deleteObjectFields('topic:' + tid, fields, callback);
-	};
-};
+	if (topic.hasOwnProperty('upvotes') && topic.hasOwnProperty('downvotes')) {
+		topic.votes = topic.upvotes - topic.downvotes;
+	}
+}

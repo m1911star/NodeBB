@@ -20,7 +20,7 @@ define('admin/extend/plugins', ['jqueryui', 'translator', 'benchpress'], functio
 		pluginsList.on('click', 'button[data-action="toggleActive"]', function () {
 			var pluginEl = $(this).parents('li');
 			pluginID = pluginEl.attr('data-plugin-id');
-			var btn = $('#' + pluginID + ' [data-action="toggleActive"]');
+			var btn = $('[id="' + pluginID + '"] [data-action="toggleActive"]');
 
 			var pluginData = ajaxify.data.installed[pluginEl.attr('data-plugin-index')];
 
@@ -34,7 +34,7 @@ define('admin/extend/plugins', ['jqueryui', 'translator', 'benchpress'], functio
 						btn.toggleClass('btn-warning', status.active).toggleClass('btn-success', !status.active);
 
 						// clone it to active plugins tab
-						if (status.active && !$('#active #' + pluginID).length) {
+						if (status.active && !$('#active [id="' + pluginID + '"]').length) {
 							$('#active ul').prepend(pluginEl.clone(true));
 						}
 
@@ -147,6 +147,16 @@ define('admin/extend/plugins', ['jqueryui', 'translator', 'benchpress'], functio
 			$('.plugins li').each(function () {
 				var pluginId = $(this).attr('data-plugin-id');
 				$(this).toggleClass('hide', pluginId && pluginId.indexOf(term) === -1);
+			});
+		});
+
+		$('#plugin-submit-usage').on('click', function () {
+			socket.emit('admin.config.setMultiple', {
+				submitPluginUsage: $(this).prop('checked') ? '1' : '0',
+			}, function (err) {
+				if (err) {
+					return app.alertError(err.message);
+				}
 			});
 		});
 
@@ -268,7 +278,7 @@ define('admin/extend/plugins', ['jqueryui', 'translator', 'benchpress'], functio
 	};
 
 	Plugins.suggest = function (pluginId, callback) {
-		var nbbVersion = app.config.version.match(/^\d\.\d\.\d/);
+		var nbbVersion = app.config.version.match(/^\d+\.\d+\.\d+/);
 		$.ajax((app.config.registry || 'https://packages.nodebb.org') + '/api/v1/suggest', {
 			type: 'GET',
 			data: {

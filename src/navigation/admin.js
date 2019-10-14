@@ -1,68 +1,69 @@
 'use strict';
 
-var async = require('async');
-var plugins = require('../plugins');
-var db = require('../database');
-var translator = require('../translator');
-var pubsub = require('../pubsub');
+const _ = require('lodash');
 
-var admin = module.exports;
-admin.cache = null;
+const plugins = require('../plugins');
+const db = require('../database');
+const translator = require('../translator');
+const pubsub = require('../pubsub');
+
+const admin = module.exports;
+let cache = null;
 
 pubsub.on('admin:navigation:save', function () {
-	admin.cache = null;
+	cache = null;
 });
 
-admin.save = function (data, callback) {
-	var order = Object.keys(data);
-	var items = data.map(function (item) {
+admin.save = async function (data) {
+	const order = Object.keys(data);
+	const items = data.map(function (item, index) {
 		for (var i in item) {
 			if (item.hasOwnProperty(i) && typeof item[i] === 'string' && (i === 'title' || i === 'text')) {
 				item[i] = translator.escape(item[i]);
 			}
 		}
+		item.order = order[index];
 		return JSON.stringify(item);
 	});
 
-	admin.cache = null;
+	cache = null;
 	pubsub.publish('admin:navigation:save');
-	async.waterfall([
-		function (next) {
-			db.delete('navigation:enabled', next);
-		},
-		function (next) {
-			db.sortedSetAdd('navigation:enabled', order, items, next);
-		},
-	], callback);
+	await db.delete('navigation:enabled');
+	await db.sortedSetAdd('navigation:enabled', order, items);
 };
 
-admin.getAdmin = function (callback) {
-	async.parallel({
-		enabled: admin.get,
-		available: getAvailable,
-	}, callback);
+admin.getAdmin = async function () {
+	const [enabled, available] = await Promise.all([
+		admin.get(),
+		getAvailable(),
+	]);
+	return { enabled: enabled, available: available };
 };
 
-admin.get = function (callback) {
-	async.waterfall([
-		function (next) {
-			db.getSortedSetRange('navigation:enabled', 0, -1, next);
-		},
-		function (data, next) {
-			data = data.map(function (item) {
-				return JSON.parse(item);
-			});
+admin.get = async function () {
+	if (cache) {
+		return _.cloneDeep(cache);
+	}
+	const data = await db.getSortedSetRange('navigation:enabled', 0, -1);
+	cache = data.map(function (item) {
+		item = JSON.parse(item);
+		item.groups = item.groups || [];
+		if (item.groups && !Array.isArray(item.groups)) {
+			item.groups = [item.groups];
+		}
+		return item;
+	});
 
-			next(null, data);
-		},
-	], callback);
+	return _.cloneDeep(cache);
 };
 
-function getAvailable(callback) {
-	var core = require('../../install/data/navigation.json').map(function (item) {
+async function getAvailable() {
+	const core = require('../../install/data/navigation.json').map(function (item) {
 		item.core = true;
 		return item;
 	});
 
-	plugins.fireHook('filter:navigation.available', core, callback);
+	return await plugins.fireHook('filter:navigation.available', core);
 }
+
+require('../promisify')(admin);

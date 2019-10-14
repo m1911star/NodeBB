@@ -8,11 +8,11 @@ var meta = require('../meta');
 var jobs = {};
 
 module.exports = function (User) {
-	User.startJobs = function (callback) {
+	User.startJobs = function () {
 		winston.verbose('[user/jobs] (Re-)starting user jobs...');
 
 		var started = 0;
-		var digestHour = parseInt(meta.config.digestHour, 10);
+		var digestHour = meta.config.digestHour;
 
 		// Fix digest hour if invalid
 		if (isNaN(digestHour)) {
@@ -33,10 +33,6 @@ module.exports = function (User) {
 		started += 1;
 
 		winston.verbose('[user/jobs] ' + started + ' jobs started');
-
-		if (typeof callback === 'function') {
-			callback();
-		}
 	};
 
 	function startDigestJob(name, cronString, term) {
@@ -63,4 +59,3 @@ module.exports = function (User) {
 		}
 	};
 };
-

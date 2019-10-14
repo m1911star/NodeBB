@@ -4,8 +4,7 @@
 	if (typeof module === 'object' && module.exports) {
 		var winston = require('winston');
 
-
-		module.exports = factory(require('xregexp'));
+		module.exports = factory(require('xregexp'), winston);
 		module.exports.walk = function (dir, done) {
 			// DEPRECATED
 			var file = require('../../src/file');
@@ -22,9 +21,10 @@
 			return (diff[0] * 1e3) + (diff[1] / 1e6);
 		};
 	} else {
-		window.utils = factory(window.XRegExp);
+		window.utils = factory(window.XRegExp, console);
 	}
-}(function (XRegExp) {
+	// eslint-disable-next-line
+}(function (XRegExp, console) {
 	var freeze = Object.freeze || function (obj) { return obj; };
 
 	// add default escape function for escaping HTML entities
@@ -391,7 +391,7 @@
 		},
 
 		isUserNameValid: function (name) {
-			return (name && name !== '' && (/^['"\s\-+.*0-9\u00BF-\u1FFF\u2C00-\uD7FF\w]+$/.test(name)));
+			return (name && name !== '' && (/^['"\s\-+.*[\]0-9\u00BF-\u1FFF\u2C00-\uD7FF\w]+$/.test(name)));
 		},
 
 		isPasswordValid: function (password) {
@@ -399,6 +399,7 @@
 		},
 
 		isNumber: function (n) {
+			// `isFinite('') === true` so isNan parseFloat check is necessary
 			return !isNaN(parseFloat(n)) && isFinite(n);
 		},
 
@@ -468,6 +469,24 @@
 			return utils.extensionMimeTypeMap[extension] || '*';
 		},
 
+		isPromise: function (object) {
+			// https://stackoverflow.com/questions/27746304/how-do-i-tell-if-an-object-is-a-promise#comment97339131_27746324
+			return object && typeof object.then === 'function';
+		},
+
+		promiseParallel: function (obj) {
+			var keys = Object.keys(obj);
+			return Promise.all(
+				keys.map(function (k) { return obj[k]; })
+			).then(function (results) {
+				var data = {};
+				keys.forEach(function (k, i) {
+					data[k] = results[i];
+				});
+				return data;
+			});
+		},
+
 		isRelativeUrl: function (url) {
 			var firstChar = String(url || '').charAt(0);
 			return (firstChar === '.' || firstChar === '/');
@@ -500,7 +519,7 @@
 
 		// takes a string like 1000 and returns 1,000
 		addCommas: function (text) {
-			return text.replace(/(\d)(?=(\d\d\d)+(?!\d))/g, '$1,');
+			return String(text).replace(/(\d)(?=(\d\d\d)+(?!\d))/g, '$1,');
 		},
 
 		toISOString: function (timestamp) {
@@ -512,7 +531,7 @@
 			timestamp = Math.min(timestamp, 8640000000000000);
 
 			try {
-				return Date.prototype.toISOString ? new Date(parseInt(timestamp, 10)).toISOString() : timestamp;
+				return new Date(parseInt(timestamp, 10)).toISOString();
 			} catch (e) {
 				return timestamp;
 			}
@@ -648,7 +667,7 @@
 			params.forEach(function (param) {
 				var val = param.split('=');
 				var key = decodeURI(val[0]);
-				var value = options.skipToType[key] ? decodeURI(val[1]) : utils.toType(decodeURI(val[1]));
+				var value = options.disableToType || options.skipToType[key] ? decodeURI(val[1]) : utils.toType(decodeURI(val[1]));
 
 				if (key) {
 					if (key.substr(-2, 2) === '[]') {
@@ -672,7 +691,9 @@
 		},
 
 		urlToLocation: function (url) {
-			return $('<a href="' + url + '" />')[0];
+			var a = document.createElement('a');
+			a.href = url;
+			return a;
 		},
 
 		// return boolean if string 'true' or string 'false', or if a parsable string which is a number

@@ -4,8 +4,8 @@ var helpers = require('./helpers');
 var setupPageRoute = helpers.setupPageRoute;
 
 module.exports = function (app, middleware, controllers) {
-	var middlewares = [middleware.checkGlobalPrivacySettings, middleware.exposeUid, middleware.handleBlocking];
-	var accountMiddlewares = [middleware.checkGlobalPrivacySettings, middleware.checkAccountPermissions, middleware.exposeUid, middleware.handleBlocking];
+	var middlewares = [middleware.exposeUid, middleware.canViewUsers];
+	var accountMiddlewares = [middleware.exposeUid, middleware.canViewUsers, middleware.checkAccountPermissions];
 
 	setupPageRoute(app, '/me/*', middleware, [], middleware.redirectMeToUserslug);
 	setupPageRoute(app, '/uid/:uid*', middleware, [], middleware.redirectUidToUserslug);
@@ -14,6 +14,7 @@ module.exports = function (app, middleware, controllers) {
 	setupPageRoute(app, '/user/:userslug/following', middleware, middlewares, controllers.accounts.follow.getFollowing);
 	setupPageRoute(app, '/user/:userslug/followers', middleware, middlewares, controllers.accounts.follow.getFollowers);
 
+	setupPageRoute(app, '/user/:userslug/categories', middleware, middlewares, controllers.accounts.categories.get);
 	setupPageRoute(app, '/user/:userslug/posts', middleware, middlewares, controllers.accounts.posts.getPosts);
 	setupPageRoute(app, '/user/:userslug/topics', middleware, middlewares, controllers.accounts.posts.getTopics);
 	setupPageRoute(app, '/user/:userslug/best', middleware, middlewares, controllers.accounts.posts.getBestPosts);
@@ -33,8 +34,8 @@ module.exports = function (app, middleware, controllers) {
 	setupPageRoute(app, '/user/:userslug/uploads', middleware, accountMiddlewares, controllers.accounts.uploads.get);
 	setupPageRoute(app, '/user/:userslug/consent', middleware, accountMiddlewares, controllers.accounts.consent.get);
 	setupPageRoute(app, '/user/:userslug/blocks', middleware, accountMiddlewares, controllers.accounts.blocks.getBlocks);
-
-	app.delete('/api/user/:userslug/session/:uuid', [middleware.exposeUid, middleware.ensureSelfOrGlobalPrivilege], controllers.accounts.session.revoke);
+	setupPageRoute(app, '/user/:userslug/sessions', middleware, accountMiddlewares, controllers.accounts.sessions.get);
+	app.delete('/api/user/:userslug/session/:uuid', [middleware.exposeUid, middleware.ensureSelfOrGlobalPrivilege], controllers.accounts.sessions.revoke);
 
 	setupPageRoute(app, '/notifications', middleware, [middleware.authenticate], controllers.accounts.notifications.get);
 	setupPageRoute(app, '/user/:userslug/chats/:roomid?', middleware, middlewares, controllers.accounts.chats.get);

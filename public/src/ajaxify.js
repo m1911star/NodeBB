@@ -1,7 +1,7 @@
 'use strict';
 
 
-var ajaxify = window.ajaxify || {};
+ajaxify = window.ajaxify || {};
 
 $(document).ready(function () {
 	var location = document.location || window.location;
@@ -71,7 +71,7 @@ $(document).ready(function () {
 			apiXHR.abort();
 		}
 
-		app.previousUrl = window.location.href;
+		app.previousUrl = !['reset'].includes(ajaxify.currentPage) ? window.location.pathname.slice(config.relative_path.length) : app.previousUrl;
 
 		url = ajaxify.start(url);
 
@@ -96,7 +96,7 @@ $(document).ready(function () {
 			retry = true;
 			app.template = data.template.name;
 
-			renderTemplate(url, data.template.name, data, callback);
+			renderTemplate(url, data.templateToRender || data.template.name, data, callback);
 		});
 
 		return true;
@@ -196,21 +196,18 @@ $(document).ready(function () {
 
 				$('#content, #footer').removeClass('ajaxifying');
 
+				// Only executed on ajaxify. Otherwise these'd be in ajaxify.end()
 				app.refreshTitle(data.title);
+				app.updateTags();
 			});
 		});
 	}
 
 	ajaxify.end = function (url, tpl_url) {
-		var count = 2;
-		function done() {
-			count -= 1;
-			if (count === 0) {
-				$(window).trigger('action:ajaxify.end', { url: url, tpl_url: tpl_url, title: ajaxify.data.title });
-			}
-		}
-		ajaxify.loadScript(tpl_url, done);
-		ajaxify.widgets.render(tpl_url, done);
+		ajaxify.loadScript(tpl_url, function done() {
+			$(window).trigger('action:ajaxify.end', { url: url, tpl_url: tpl_url, title: ajaxify.data.title });
+		});
+		ajaxify.widgets.render(tpl_url);
 
 		$(window).trigger('action:ajaxify.contentLoaded', { url: url, tpl: tpl_url });
 
@@ -391,6 +388,11 @@ $(document).ready(function () {
 
 			// Default behaviour for rss feeds
 			if (internalLink && $(this).attr('href') && $(this).attr('href').endsWith('.rss')) {
+				return;
+			}
+
+			// Default behaviour for sitemap
+			if (internalLink && $(this).attr('href') && String(_self.pathname).startsWith(config.relative_path + '/sitemap') && $(this).attr('href').endsWith('.xml')) {
 				return;
 			}
 

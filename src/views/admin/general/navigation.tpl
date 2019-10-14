@@ -19,8 +19,7 @@
 			<li data-index="{enabled.index}" class="well <!-- IF !enabled.selected -->hidden<!-- ENDIF !enabled.selected -->">
 				<form>
 					<div class="row">
-						<div class="col-sm-6">
-
+						<div class="col-sm-1">
 							<div class="form-group">
 								<label>[[admin/general/navigation:icon]]</label>
 								<br/>
@@ -29,61 +28,60 @@
 									<input class="form-control" type="hidden" name="iconClass" value="{enabled.iconClass}" />
 								</span>
 							</div>
+						</div>
 
+						<div class="col-sm-3">
 							<div class="form-group">
 								<label>[[admin/general/navigation:route]]</label>
 								<input class="form-control" type="text" name="route" value="{enabled.route}" />
 							</div>
+						</div>
 
+						<div class="col-sm-4">
 							<div class="form-group">
-								<label>[[admin/general/navigation:tooltip]]</label>
-								<input class="form-control unescape" type="text" name="title" value="{enabled.title}" />
+								<label>[[admin/general/navigation:class]]</label>
+								<input class="form-control" type="text" name="class" value="{enabled.class}" />
 							</div>
 						</div>
 
-						<div class="col-sm-6">
-							<div class="form-group">
-								<label>[[admin/general/navigation:text]]</label>
-								<input class="form-control unescape" type="text" name="text" value="{enabled.text}" />
-							</div>
-
-							<div class="form-group">
-								<label>[[admin/general/navigation:text-class]]</label>
-								<input class="form-control" type="text" name="textClass" value="{enabled.textClass}" />
-							</div>
-
+						<div class="col-sm-4">
 							<div class="form-group">
 								<label>[[admin/general/navigation:id]]</label>
 								<input class="form-control" type="text" name="id" value="{enabled.id}" />
 							</div>
 						</div>
 					</div>
+					<div class="row">
+						<div class="col-sm-4">
+							<div class="form-group">
+								<label>[[admin/general/navigation:text]]</label>
+								<input class="form-control unescape" type="text" name="text" value="{enabled.text}" />
+							</div>
+						</div>
+						<div class="col-sm-4">
+							<div class="form-group">
+								<label>[[admin/general/navigation:text-class]]</label>
+								<input class="form-control" type="text" name="textClass" value="{enabled.textClass}" />
+							</div>
+						</div>
 
-					<strong>[[admin/general/navigation:properties]]</strong>
-					<div class="checkbox">
-						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
-							<input class="mdl-switch__input" type="checkbox" name="property:adminOnly" <!-- IF enabled.properties.adminOnly -->checked<!-- ENDIF enabled.properties.adminOnly -->/>
-							<span class="mdl-switch__label"><strong>[[admin/general/navigation:only-admins]]</strong></span>
-						</label>
+						<div class="col-sm-4">
+							<div class="form-group">
+								<label>[[admin/general/navigation:tooltip]]</label>
+								<input class="form-control unescape" type="text" name="title" value="{enabled.title}" />
+							</div>
+						</div>
 					</div>
-					<div class="checkbox">
-						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
-							<input class="mdl-switch__input" type="checkbox" name="property:globalMod" <!-- IF enabled.properties.globalMod -->checked<!-- ENDIF enabled.properties.globalMod -->/>
-							<span class="mdl-switch__label"><strong>[[admin/general/navigation:only-global-mods-and-admins]]</strong></span>
-						</label>
+
+					<strong>[[admin/general/navigation:groups]]</strong>
+					<div>
+						<select name="groups" class="form-control" size="10" multiple>
+							<!-- BEGIN enabled.groups -->
+							<option value="{enabled.groups.displayName}"<!-- IF enabled.groups.selected --> selected<!-- ENDIF enabled.groups.selected -->>{enabled.groups.displayName}</option>
+							<!-- END enabled.groups -->
+						</select>
 					</div>
-					<div class="checkbox">
-						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
-							<input class="mdl-switch__input" type="checkbox" name="property:loggedIn" <!-- IF enabled.properties.loggedIn -->checked<!-- ENDIF enabled.properties.loggedIn -->/>
-							<span class="mdl-switch__label"><strong>[[admin/general/navigation:only-logged-in]]</strong></span>
-						</label>
-					</div>
-					<div class="checkbox">
-						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
-							<input class="mdl-switch__input" type="checkbox" name="property:guestOnly" <!-- IF enabled.properties.guestOnly -->checked<!-- ENDIF enabled.properties.guestOnly -->/>
-							<span class="mdl-switch__label"><strong>[[admin/general/navigation:only-guest]]</strong></span>
-						</label>
-					</div>
+
 					<div class="checkbox">
 						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
 							<input class="mdl-switch__input" type="checkbox" name="property:targetBlank" <!-- IF enabled.properties.targetBlank -->checked<!-- ENDIF enabled.properties.targetBlank -->/>

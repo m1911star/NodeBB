@@ -1,130 +1,179 @@
 
 'use strict';
 
-var async = require('async');
-var nconf = require('nconf');
-var path = require('path');
-var winston = require('winston');
+const nconf = require('nconf');
+const path = require('path');
+const winston = require('winston');
+const util = require('util');
 
-var db = require('../database');
-var pubsub = require('../pubsub');
-var Meta = require('../meta');
-var cacheBuster = require('./cacheBuster');
+const db = require('../database');
+const pubsub = require('../pubsub');
+const Meta = require('../meta');
+const cacheBuster = require('./cacheBuster');
+const defaults = require('../../install/data/defaults');
 
-var Configs = module.exports;
+const Configs = module.exports;
 
 Meta.config = {};
 
-Configs.init = function (callback) {
-	var config;
-	async.waterfall([
-		function (next) {
-			Configs.list(next);
-		},
-		function (_config, next) {
-			config = _config;
-			cacheBuster.read(next);
-		},
-		function (buster, next) {
-			config['cache-buster'] = 'v=' + (buster || Date.now());
-			Meta.config = config;
-			next();
-		},
-	], callback);
-};
+function deserialize(config) {
+	const deserialized = {};
+	Object.keys(config).forEach(function (key) {
+		const defaultType = typeof defaults[key];
+		const type = typeof config[key];
+		const number = parseFloat(config[key]);
 
-Configs.list = function (callback) {
-	db.getObject('config', function (err, config) {
-		config = config || {};
-		config.version = nconf.get('version');
-		config.registry = nconf.get('registry');
-		callback(err, config);
-	});
-};
-
-Configs.get = function (field, callback) {
-	db.getObjectField('config', field, callback);
-};
-
-Configs.getFields = function (fields, callback) {
-	db.getObjectFields('config', fields, callback);
-};
-
-Configs.set = function (field, value, callback) {
-	callback = callback || function () {};
-	if (!field) {
-		return callback(new Error('[[error:invalid-data]]'));
-	}
-
-	var data = {};
-	data[field] = value;
-	Configs.setMultiple(data, callback);
-};
-
-
-Configs.setMultiple = function (data, callback) {
-	async.waterfall([
-		function (next) {
-			processConfig(data, next);
-		},
-		function (next) {
-			db.setObject('config', data, next);
-		},
-		function (next) {
-			updateConfig(data);
-			setImmediate(next);
-		},
-	], callback);
-};
-
-function processConfig(data, callback) {
-	async.parallel([
-		async.apply(saveRenderedCss, data),
-		function (next) {
-			var image = require('../image');
-			if (data['brand:logo']) {
-				image.size(path.join(nconf.get('upload_path'), 'system', 'site-logo-x50.png'), function (err, size) {
-					if (err && err.code === 'ENOENT') {
-						// For whatever reason the x50 logo wasn't generated, gracefully error out
-						winston.warn('[logo] The email-safe logo doesn\'t seem to have been created, please re-upload your site logo.');
-						size = {
-							height: 0,
-							width: 0,
-						};
-					} else if (err) {
-						return next(err);
-					}
-
-					data['brand:emailLogo:height'] = size.height;
-					data['brand:emailLogo:width'] = size.width;
-					next();
-				});
+		if (defaultType === 'string' && type === 'number') {
+			deserialized[key] = String(config[key]);
+		} else if (defaultType === 'number' && type === 'string') {
+			if (!isNaN(number) && isFinite(config[key])) {
+				deserialized[key] = number;
 			} else {
-				setImmediate(next);
+				deserialized[key] = defaults[key];
 			}
-		},
-	], function (err) {
-		callback(err);
+		} else if (config[key] === 'true') {
+			deserialized[key] = true;
+		} else if (config[key] === 'false') {
+			deserialized[key] = false;
+		} else if (config[key] === null) {
+			deserialized[key] = defaults[key];
+		} else if (defaultType === 'undefined' && !isNaN(number) && isFinite(config[key])) {
+			deserialized[key] = number;
+		} else {
+			deserialized[key] = config[key];
+		}
 	});
+	return deserialized;
 }
 
-function saveRenderedCss(data, callback) {
-	if (!data.customCSS) {
-		return setImmediate(callback);
+Configs.deserialize = deserialize;
+
+Configs.init = async function () {
+	const config = await Configs.list();
+	const buster = await cacheBuster.read();
+	config['cache-buster'] = 'v=' + (buster || Date.now());
+	Meta.config = config;
+};
+
+Configs.list = async function () {
+	return await Configs.getFields([]);
+};
+
+Configs.get = async function (field) {
+	const values = await Configs.getFields([field]);
+	return (values.hasOwnProperty(field) && values[field] !== undefined) ? values[field] : null;
+};
+
+Configs.getFields = async function (fields) {
+	let values;
+	if (fields.length) {
+		values = await db.getObjectFields('config', fields);
+	} else {
+		values = await db.getObject('config');
 	}
 
-	var less = require('less');
-	async.waterfall([
-		function (next) {
-			less.render(data.customCSS, {
-				compress: true,
-			}, next);
-		},
-		function (lessObject, next) {
-			data.renderedCustomCSS = lessObject.css;
-			setImmediate(next);
-		},
-	], callback);
+	values = { ...defaults, ...(values ? deserialize(values) : {}) };
+
+	if (!fields.length) {
+		values.version = nconf.get('version');
+		values.registry = nconf.get('registry');
+	}
+	return values;
+};
+
+Configs.set = async function (field, value) {
+	if (!field) {
+		throw new Error('[[error:invalid-data]]');
+	}
+
+	await Configs.setMultiple({
+		[field]: value,
+	});
+};
+
+Configs.setMultiple = async function (data) {
+	data = deserialize(data);
+	await processConfig(data);
+	await db.setObject('config', data);
+	updateConfig(data);
+};
+
+Configs.setOnEmpty = async function (values) {
+	const data = await db.getObject('config');
+	const config = { ...values, ...(data ? deserialize(data) : {}) };
+	await db.setObject('config', config);
+};
+
+Configs.remove = async function (field) {
+	await db.deleteObjectField('config', field);
+};
+
+async function processConfig(data) {
+	ensurePositiveInteger(data, 'maximumUsernameLength');
+	ensurePositiveInteger(data, 'minimumUsernameLength');
+	ensurePositiveInteger(data, 'minimumPasswordLength');
+	ensurePositiveInteger(data, 'maximumAboutMeLength');
+	if (data.minimumUsernameLength > data.maximumUsernameLength) {
+		throw new Error('[[error:invalid-data]]');
+	}
+
+	await Promise.all([
+		saveRenderedCss(data),
+		getLogoSize(data),
+	]);
+}
+
+function ensurePositiveInteger(data, field) {
+	if (data.hasOwnProperty(field)) {
+		data[field] = parseInt(data[field], 10);
+		if (!(data[field] > 0)) {
+			throw new Error('[[error:invalid-data]]');
+		}
+	}
+}
+
+function lessRender(string, callback) {
+	const less = require('less');
+	less.render(string, {
+		compress: true,
+		javascriptEnabled: true,
+	}, callback);
+}
+
+const lessRenderAsync = util.promisify(lessRender);
+
+async function saveRenderedCss(data) {
+	if (!data.customCSS) {
+		return;
+	}
+
+	const lessObject = await lessRenderAsync(data.customCSS);
+	data.renderedCustomCSS = lessObject.css;
+}
+
+async function getLogoSize(data) {
+	const image = require('../image');
+	if (!data['brand:logo']) {
+		return;
+	}
+	let size;
+	try {
+		size = await image.size(path.join(nconf.get('upload_path'), 'system', 'site-logo-x50.png'));
+	} catch (err) {
+		if (err.code === 'ENOENT') {
+			// For whatever reason the x50 logo wasn't generated, gracefully error out
+			winston.warn('[logo] The email-safe logo doesn\'t seem to have been created, please re-upload your site logo.');
+			size = {
+				height: 0,
+				width: 0,
+			};
+		} else {
+			throw err;
+		}
+	}
+	data['brand:emailLogo'] = nconf.get('url') + path.join(nconf.get('upload_url'), 'system', 'site-logo-x50.png');
+	data['brand:emailLogo:height'] = size.height;
+	data['brand:emailLogo:width'] = size.width;
 }
 
 function updateConfig(config) {
@@ -141,29 +190,3 @@ pubsub.on('config:update', function onConfigReceived(config) {
 		updateLocalConfig(config);
 	}
 });
-
-Configs.setOnEmpty = function (values, callback) {
-	async.waterfall([
-		function (next) {
-			db.getObject('config', next);
-		},
-		function (data, next) {
-			data = data || {};
-			var empty = {};
-			Object.keys(values).forEach(function (key) {
-				if (!data.hasOwnProperty(key)) {
-					empty[key] = values[key];
-				}
-			});
-			if (Object.keys(empty).length) {
-				db.setObject('config', empty, next);
-			} else {
-				setImmediate(next);
-			}
-		},
-	], callback);
-};
-
-Configs.remove = function (field, callback) {
-	db.deleteObjectField('config', field, callback);
-};

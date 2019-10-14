@@ -2,38 +2,62 @@
 
 var async = require('async');
 var nconf = require('nconf');
+var winston = require('winston');
 
 var meta = require('../meta');
 var user = require('../user');
 var privileges = require('../privileges');
 var plugins = require('../plugins');
 
+var auth = require('../routes/authentication');
+
 var controllers = {
 	helpers: require('../controllers/helpers'),
 };
 
 module.exports = function (middleware) {
-	middleware.authenticate = function (req, res, next) {
+	function authenticate(req, res, next, callback) {
 		if (req.loggedIn) {
 			return next();
 		}
-
-		if (plugins.hasListeners('action:middleware.authenticate')) {
-			return plugins.fireHook('action:middleware.authenticate', {
+		if (plugins.hasListeners('response:middleware.authenticate')) {
+			return plugins.fireHook('response:middleware.authenticate', {
 				req: req,
 				res: res,
-				next: next,
+				next: function (err) {
+					if (err) {
+						return next(err);
+					}
+
+					auth.setAuthVars(req, res, function () {
+						if (req.loggedIn && req.user && req.user.uid) {
+							return next();
+						}
+
+						callback();
+					});
+				},
 			});
 		}
 
-		controllers.helpers.notAllowed(req, res);
+		callback();
+	}
+
+	middleware.authenticate = function middlewareAuthenticate(req, res, next) {
+		authenticate(req, res, next, function () {
+			controllers.helpers.notAllowed(req, res, next);
+		});
 	};
 
-	middleware.ensureSelfOrGlobalPrivilege = function (req, res, next) {
+	middleware.authenticateOrGuest = function authenticateOrGuest(req, res, next) {
+		authenticate(req, res, next, next);
+	};
+
+	middleware.ensureSelfOrGlobalPrivilege = function ensureSelfOrGlobalPrivilege(req, res, next) {
 		ensureSelfOrMethod(user.isAdminOrGlobalMod, req, res, next);
 	};
 
-	middleware.ensureSelfOrPrivileged = function (req, res, next) {
+	middleware.ensureSelfOrPrivileged = function ensureSelfOrPrivileged(req, res, next) {
 		ensureSelfOrMethod(user.isPrivileged, req, res, next);
 	};
 
@@ -63,15 +87,33 @@ module.exports = function (middleware) {
 		], next);
 	}
 
-	middleware.checkGlobalPrivacySettings = function (req, res, next) {
-		if (!req.loggedIn && !!parseInt(meta.config.privateUserInfo, 10)) {
-			return middleware.authenticate(req, res, next);
-		}
-
-		next();
+	middleware.checkGlobalPrivacySettings = function checkGlobalPrivacySettings(req, res, next) {
+		winston.warn('[middleware], checkGlobalPrivacySettings deprecated, use canViewUsers or canViewGroups');
+		middleware.canViewUsers(req, res, next);
 	};
 
-	middleware.checkAccountPermissions = function (req, res, next) {
+	middleware.canViewUsers = function canViewUsers(req, res, next) {
+		if (parseInt(res.locals.uid, 10) === req.uid) {
+			return next();
+		}
+		privileges.global.can('view:users', req.uid, function (err, canView) {
+			if (err || canView) {
+				return next(err);
+			}
+			controllers.helpers.notAllowed(req, res);
+		});
+	};
+
+	middleware.canViewGroups = function canViewGroups(req, res, next) {
+		privileges.global.can('view:groups', req.uid, function (err, canView) {
+			if (err || canView) {
+				return next(err);
+			}
+			controllers.helpers.notAllowed(req, res);
+		});
+	};
+
+	middleware.checkAccountPermissions = function checkAccountPermissions(req, res, next) {
 		// This middleware ensures that only the requested user and admins can pass
 		async.waterfall([
 			function (next) {
@@ -90,7 +132,7 @@ module.exports = function (middleware) {
 
 				// For the account/info page only, allow plain moderators through
 				if (/user\/.+\/info$/.test(req.path)) {
-					user.isModeratorOfAnyCategory(req.uid, next);
+					privileges.global.can('view:users:info', req.uid, next);
 				} else {
 					next(null, false);
 				}
@@ -104,8 +146,8 @@ module.exports = function (middleware) {
 		], next);
 	};
 
-	middleware.redirectToAccountIfLoggedIn = function (req, res, next) {
-		if (req.session.forceLogin || !req.uid) {
+	middleware.redirectToAccountIfLoggedIn = function redirectToAccountIfLoggedIn(req, res, next) {
+		if (req.session.forceLogin || req.uid <= 0) {
 			return next();
 		}
 
@@ -119,9 +161,9 @@ module.exports = function (middleware) {
 		], next);
 	};
 
-	middleware.redirectUidToUserslug = function (req, res, next) {
+	middleware.redirectUidToUserslug = function redirectUidToUserslug(req, res, next) {
 		var uid = parseInt(req.params.uid, 10);
-		if (!uid) {
+		if (uid <= 0) {
 			return next();
 		}
 		async.waterfall([
@@ -140,7 +182,7 @@ module.exports = function (middleware) {
 		], next);
 	};
 
-	middleware.redirectMeToUserslug = function (req, res, next) {
+	middleware.redirectMeToUserslug = function redirectMeToUserslug(req, res, next) {
 		var uid = req.uid;
 		async.waterfall([
 			function (next) {
@@ -156,7 +198,7 @@ module.exports = function (middleware) {
 		], next);
 	};
 
-	middleware.isAdmin = function (req, res, next) {
+	middleware.isAdmin = function isAdmin(req, res, next) {
 		async.waterfall([
 			function (next) {
 				user.isAdministrator(req.uid, next);
@@ -173,8 +215,8 @@ module.exports = function (middleware) {
 				}
 
 				var loginTime = req.session.meta ? req.session.meta.datetime : 0;
-				var adminReloginDuration = (meta.config.adminReloginDuration || 60) * 60000;
-				var disabled = parseInt(meta.config.adminReloginDuration, 10) === 0;
+				var adminReloginDuration = meta.config.adminReloginDuration * 60000;
+				var disabled = meta.config.adminReloginDuration === 0;
 				if (disabled || (loginTime && parseInt(loginTime, 10) > Date.now() - adminReloginDuration)) {
 					var timeLeft = parseInt(loginTime, 10) - (Date.now() - adminReloginDuration);
 					if (req.session.meta && timeLeft < Math.min(300000, adminReloginDuration)) {
@@ -190,7 +232,7 @@ module.exports = function (middleware) {
 				}
 				returnTo = returnTo.replace(/^\/api/, '');
 
-				req.session.returnTo = nconf.get('relative_path') + returnTo;
+				req.session.returnTo = returnTo;
 				req.session.forceLogin = 1;
 				if (res.locals.isAPI) {
 					res.status(401).json({});
@@ -209,10 +251,10 @@ module.exports = function (middleware) {
 		res.status(403).render('403', { title: '[[global:403.title]]' });
 	};
 
-	middleware.registrationComplete = function (req, res, next) {
+	middleware.registrationComplete = function registrationComplete(req, res, next) {
 		// If the user's session contains registration data, redirect the user to complete registration
 		if (!req.session.hasOwnProperty('registration')) {
-			return next();
+			return setImmediate(next);
 		}
 		if (!req.path.endsWith('/register/complete')) {
 			// Append user data if present
@@ -220,19 +262,7 @@ module.exports = function (middleware) {
 
 			controllers.helpers.redirect(res, '/register/complete');
 		} else {
-			return next();
+			setImmediate(next);
 		}
-	};
-
-	middleware.handleBlocking = function (req, res, next) {
-		user.blocks.is(res.locals.uid, req.uid, function (err, blocked) {
-			if (err) {
-				return next(err);
-			} else if (blocked) {
-				res.status(404).render('404', { title: '[[global:404.title]]' });
-			} else {
-				return next();
-			}
-		});
 	};
 };

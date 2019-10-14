@@ -1,14 +1,15 @@
 <div class="row dashboard">
 	<div class="col-lg-9">
-		<div class="panel panel-default">
-			<div class="panel-heading">[[admin/general/dashboard:forum-traffic]]</div>
+		<div class="panel panel-default" id="analytics-panel">
+			<div class="panel-heading">
+				[[admin/general/dashboard:forum-traffic]]
+				<div class="pull-right">
+					<a id="view-as-json" href="{config.relative_path}/api/admin/analytics&type=hourly"><i class="fa fa-terminal"></i></a>
+					<i class="fa fa-expand"></i>
+				</div>
+			</div>
 			<div class="panel-body">
 				<div class="graph-container" id="analytics-traffic-container">
-					<i class="fa fa-expand"></i>
-					<ul class="graph-legend">
-						<li><div class="page-views"></div><span>[[admin/general/dashboard:page-views]]</span></li>
-						<li><div class="unique-visitors"></div><span>[[admin/general/dashboard:unique-visitors]]</span></li>
-					</ul>
 					<canvas id="analytics-traffic" width="100%" height="400"></canvas>
 				</div>
 				<hr/>
@@ -34,82 +35,88 @@
 		</div>
 
 		<div class="row">
-			<!-- BEGIN stats -->
-			<div class="col-lg-6">
-				<div class="panel panel-default stats">
-					<div class="panel-heading">{stats.name}</div>
+			<div class="table-responsive">
+				<table class="table table-striped">
+					<thead>
+						<tr>
+							<th></th>
+							<th class="text-right">[[admin/general/dashboard:stats.yesterday]]</th>
+							<th class="text-right">[[admin/general/dashboard:stats.today]]</th>
+							<th></th>
+							<th class="text-right">[[admin/general/dashboard:stats.last-week]]</th>
+							<th class="text-right">[[admin/general/dashboard:stats.this-week]]</th>
+							<th></th>
+							<th class="text-right">[[admin/general/dashboard:stats.last-month]]</th>
+							<th class="text-right">[[admin/general/dashboard:stats.this-month]]</th>
+							<th></th>
+							<th class="text-right">[[admin/general/dashboard:stats.all]]</th>
+						</tr>
+					</thead>
+					<tbody>
+						<!-- BEGIN stats -->
+						<tr>
+							<td><strong>{stats.name}</strong></td>
+							<td class="text-right formatted-number">{stats.yesterday}</td>
+							<td class="text-right formatted-number">{stats.today}</td>
+							<td class="{stats.dayTextClass}"><small>{stats.dayIncrease}%</small></td>
+
+							<td class="text-right formatted-number">{stats.lastweek}</td>
+							<td class="text-right formatted-number">{stats.thisweek}</td>
+							<td class="{stats.weekTextClass}"><small>{stats.weekIncrease}%</small></td>
+
+							<td class="text-right formatted-number">{stats.lastmonth}</td>
+							<td class="text-right formatted-number">{stats.thismonth}</td>
+							<td class="{stats.monthTextClass}"><small>{stats.monthIncrease}%</small></td>
+
+							<td class="text-right formatted-number">{stats.alltime}</td>
+						</tr>
+						<!-- END stats -->
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<div class="row">
+			<div class="col-lg-4">
+				<div class="panel panel-default">
+					<div class="panel-heading">[[admin/general/dashboard:anonymous-registered-users]]</div>
 					<div class="panel-body">
-						<div id="unique-visitors">
-							<div class="text-center pull-left">
-								<span class="formatted-number">{stats.day}</span>
-								<div class="stat">[[admin/general/dashboard:stats.day]]</div>
-							</div>
-							<div class="text-center pull-left">
-								<span class="formatted-number">{stats.week}</span>
-								<div class="stat">[[admin/general/dashboard:stats.week]]</div>
-							</div>
-							<div class="text-center pull-left">
-								<span class="formatted-number">{stats.month}</span>
-								<div class="stat">[[admin/general/dashboard:stats.month]]</div>
-							</div>
-							<div class="text-center pull-left">
-								<span class="formatted-number">{stats.alltime}</span>
-								<div class="stat">[[admin/general/dashboard:stats.all]]</div>
-							</div>
+						<div class="graph-container pie-chart legend-down">
+							<canvas id="analytics-registered"></canvas>
+							<ul class="graph-legend" id="analytics-legend">
+								<li><div class="registered"></div><span>(<span class="count"></span>) [[admin/general/dashboard:registered]]</span></li>
+								<li><div class="anonymous"></div><span>(<span class="count"></span>) [[admin/general/dashboard:anonymous]]</span></li>
+							</ul>
 						</div>
 					</div>
 				</div>
 			</div>
-			<!-- END stats -->
 
-			<div class="col-lg-6">
+			<div class="col-lg-4">
 				<div class="panel panel-default">
-					<div class="panel-heading">[[admin/general/dashboard:updates]]</div>
+					<div class="panel-heading">[[admin/general/dashboard:user-presence]]</div>
 					<div class="panel-body">
-						<div class="alert <!-- IF lookupFailed -->alert-danger<!-- ELSE --><!-- IF upgradeAvailable -->alert-warning<!-- ELSE --><!-- IF currentPrerelease -->alert-info<!-- ELSE -->alert-success<!-- END --><!-- END --><!-- END --> version-check">
-							<p>[[admin/general/dashboard:running-version, {version}]]</p>
-							<p>
-							<!-- IF lookupFailed -->
-							[[admin/general/dashboard:latest-lookup-failed]]
-							<!-- ELSE -->
-								<!-- IF upgradeAvailable -->
-									<!-- IF currentPrerelease -->
-									[[admin/general/dashboard:prerelease-upgrade-available, {latestVersion}]]
-									<!-- ELSE -->
-									[[admin/general/dashboard:upgrade-available, {latestVersion}]]
-									<!-- END -->
-								<!-- ELSE -->
-									<!-- IF currentPrerelease -->
-									[[admin/general/dashboard:prerelease-warning]]
-									<!-- ELSE -->
-									[[admin/general/dashboard:up-to-date]]
-									<!-- END -->
-								<!-- END -->
-							<!-- END -->
-							</p>
+						<div class="graph-container pie-chart legend-down">
+							<canvas id="analytics-presence"></canvas>
+							<ul class="graph-legend" id="analytics-presence-legend">
+								<li><div class="reading-posts"></div><span>(<span class="count"></span>) [[admin/general/dashboard:reading-posts]]</span></li>
+								<li><div class="on-categories"></div><span>(<span class="count"></span>) [[admin/general/dashboard:on-categories]]</span></li>
+								<li><div class="browsing-topics"></div><span>(<span class="count"></span>) [[admin/general/dashboard:browsing-topics]]</span></li>
+								<li><div class="recent"></div><span>(<span class="count"></span>) [[admin/general/dashboard:recent]]</span></li>
+								<li><div class="unread"></div><span>(<span class="count"></span>) [[admin/general/dashboard:unread]]</span></li>
+							</ul>
 						</div>
-						<p>
-							[[admin/general/dashboard:keep-updated]]
-						</p>
 					</div>
 				</div>
 			</div>
-
-			<div class="col-lg-6">
+			<div class="col-lg-4">
 				<div class="panel panel-default">
-					<div class="panel-heading">[[admin/general/dashboard:notices]]</div>
+					<div class="panel-heading">[[admin/general/dashboard:high-presence-topics]]</div>
 					<div class="panel-body">
-					<!-- BEGIN notices -->
-						<div>
-							<!-- IF notices.done -->
-							<i class="fa fa-fw fa-check text-success"></i> {notices.doneText}
-							<!-- ELSE -->
-							<!-- IF notices.link --><a href="{notices.link}" data-toggle="tooltip" title="{notices.tooltip}"><!-- ENDIF notices.link -->
-							<i class="fa fa-fw fa-times text-danger"></i> {notices.notDoneText}
-							<!-- IF notices.link --></a><!-- ENDIF notices.link -->
-							<!-- ENDIF notices.done -->
+						<div class="graph-container pie-chart legend-down">
+							<canvas id="analytics-topics"></canvas>
+							<ul class="graph-legend" id="topics-legend"></ul>
 						</div>
-					<!-- END notices -->
 					</div>
 				</div>
 			</div>
@@ -154,43 +161,51 @@
 		</div>
 
 		<div class="panel panel-default">
-			<div class="panel-heading">[[admin/general/dashboard:anonymous-registered-users]]</div>
+			<div class="panel-heading">[[admin/general/dashboard:updates]]</div>
 			<div class="panel-body">
-				<div class="graph-container pie-chart legend-up">
-					<ul class="graph-legend">
-						<li><div class="anonymous"></div><span>[[admin/general/dashboard:anonymous]]</span></li>
-						<li><div class="registered"></div><span>[[admin/general/dashboard:registered]]</span></li>
-					</ul>
-					<canvas id="analytics-registered"></canvas>
+				<div class="alert <!-- IF lookupFailed -->alert-danger<!-- ELSE --><!-- IF upgradeAvailable -->alert-warning<!-- ELSE --><!-- IF currentPrerelease -->alert-info<!-- ELSE -->alert-success<!-- END --><!-- END --><!-- END --> version-check">
+					<p>[[admin/general/dashboard:running-version, {version}]]</p>
+					<p>
+					<!-- IF lookupFailed -->
+					[[admin/general/dashboard:latest-lookup-failed]]
+					<!-- ELSE -->
+						<!-- IF upgradeAvailable -->
+							<!-- IF currentPrerelease -->
+							[[admin/general/dashboard:prerelease-upgrade-available, {latestVersion}]]
+							<!-- ELSE -->
+							[[admin/general/dashboard:upgrade-available, {latestVersion}]]
+							<!-- END -->
+						<!-- ELSE -->
+							<!-- IF currentPrerelease -->
+							[[admin/general/dashboard:prerelease-warning]]
+							<!-- ELSE -->
+							[[admin/general/dashboard:up-to-date]]
+							<!-- END -->
+						<!-- END -->
+					<!-- END -->
+					</p>
 				</div>
+				<p>
+					[[admin/general/dashboard:keep-updated]]
+				</p>
 			</div>
 		</div>
 
 		<div class="panel panel-default">
-			<div class="panel-heading">[[admin/general/dashboard:user-presence]]</div>
+			<div class="panel-heading">[[admin/general/dashboard:notices]]</div>
 			<div class="panel-body">
-				<div class="graph-container pie-chart legend-up">
-					<ul class="graph-legend">
-						<li><div class="on-categories"></div><span>[[admin/general/dashboard:on-categories]]</span></li>
-						<li><div class="reading-posts"></div><span>[[admin/general/dashboard:reading-posts]]</span></li>
-						<li><div class="browsing-topics"></div><span>[[admin/general/dashboard:browsing-topics]]</span></li>
-						<li><div class="recent"></div><span>[[admin/general/dashboard:recent]]</span></li>
-						<li><div class="unread"></div><span>[[admin/general/dashboard:unread]]</span></li>
-					</ul>
-					<canvas id="analytics-presence"></canvas>
+			<!-- BEGIN notices -->
+				<div>
+					<!-- IF notices.done -->
+					<i class="fa fa-fw fa-check text-success"></i> {notices.doneText}
+					<!-- ELSE -->
+					<!-- IF notices.link --><a href="{notices.link}" data-toggle="tooltip" title="{notices.tooltip}"><!-- ENDIF notices.link -->
+					<i class="fa fa-fw fa-times text-danger"></i> {notices.notDoneText}
+					<!-- IF notices.link --></a><!-- ENDIF notices.link -->
+					<!-- ENDIF notices.done -->
 				</div>
+			<!-- END notices -->
 			</div>
 		</div>
-
-		<div class="panel panel-default">
-			<div class="panel-heading">[[admin/general/dashboard:high-presence-topics]]</div>
-			<div class="panel-body">
-				<div class="graph-container pie-chart legend-down">
-					<canvas id="analytics-topics"></canvas>
-					<ul class="graph-legend" id="topics-legend"></ul>
-				</div>
-			</div>
-		</div>
-
 	</div>
 </div>

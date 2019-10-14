@@ -5,6 +5,7 @@ var express = require('express');
 
 function apiRoutes(router, middleware, controllers) {
 	router.get('/users/csv', middleware.authenticate, controllers.admin.users.getCSV);
+	router.get('/analytics', middleware.authenticate, controllers.admin.dashboard.getAnalytics);
 
 	var multipart = require('connect-multiparty');
 	var multipartMiddleware = multipart();
@@ -90,6 +91,7 @@ function addRoutes(router, middleware, controllers) {
 
 	router.get('/advanced/database', middlewares, controllers.admin.database.get);
 	router.get('/advanced/events', middlewares, controllers.admin.events.get);
+	router.get('/advanced/hooks', middlewares, controllers.admin.hooks.get);
 	router.get('/advanced/logs', middlewares, controllers.admin.logs.get);
 	router.get('/advanced/errors', middlewares, controllers.admin.errors.get);
 	router.get('/advanced/errors/export', middlewares, controllers.admin.errors.export);

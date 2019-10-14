@@ -111,16 +111,16 @@ describe('List methods', function () {
 		before(function (done) {
 			async.series([
 				function (next) {
-					db.listAppend('testList4', 12, next);
+					db.listAppend('testList7', 12, next);
 				},
 				function (next) {
-					db.listPrepend('testList4', 9, next);
+					db.listPrepend('testList7', 9, next);
 				},
 			], done);
 		});
 
 		it('should remove the last element of list and return it', function (done) {
-			db.listRemoveLast('testList4', function (err, lastElement) {
+			db.listRemoveLast('testList7', function (err, lastElement) {
 				assert.equal(err, null);
 				assert.equal(arguments.length, 2);
 				assert.equal(lastElement, '12');
@@ -201,17 +201,26 @@ describe('List methods', function () {
 		});
 	});
 
-
-	it('should get the length of a list', function (done) {
-		db.listAppend('getLengthList', 1, function (err) {
-			assert.ifError(err);
-			db.listAppend('getLengthList', 2, function (err) {
+	describe('listLength', function () {
+		it('should get the length of a list', function (done) {
+			db.listAppend('getLengthList', 1, function (err) {
 				assert.ifError(err);
-				db.listLength('getLengthList', function (err, length) {
+				db.listAppend('getLengthList', 2, function (err) {
 					assert.ifError(err);
-					assert.equal(length, 2);
-					done();
+					db.listLength('getLengthList', function (err, length) {
+						assert.ifError(err);
+						assert.equal(length, 2);
+						done();
+					});
 				});
+			});
+		});
+
+		it('should return 0 if list does not have any elements', function (done) {
+			db.listLength('doesnotexist', function (err, length) {
+				assert.ifError(err);
+				assert.strictEqual(length, 0);
+				done();
 			});
 		});
 	});

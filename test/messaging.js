@@ -20,7 +20,6 @@ describe('Messaging Library', function () {
 	var roomId;
 
 	before(function (done) {
-		Groups.resetCache();
 		// Create 3 users: 1 admin, 2 regular
 		async.series([
 			async.apply(User.create, { username: 'foo', password: 'barbar' }),	// admin
@@ -114,6 +113,16 @@ describe('Messaging Library', function () {
 			});
 		});
 
+		it('should send a user-join system message when a chat room is created', (done) => {
+			socketModules.chats.getMessages({ uid: fooUid }, { uid: fooUid, roomId: roomId, start: 0 }, function (err, messages) {
+				assert.ifError(err);
+				assert.equal(messages.length, 1);
+				assert.strictEqual(messages[0].system, true);
+				assert.strictEqual(messages[0].content, 'user-join');
+				done();
+			});
+		});
+
 		it('should fail to add user to room with invalid data', function (done) {
 			socketModules.chats.addUserToRoom({ uid: fooUid }, null, function (err) {
 				assert.equal(err.message, '[[error:invalid-data]]');
@@ -183,6 +192,17 @@ describe('Messaging Library', function () {
 						done();
 					});
 				});
+			});
+		});
+
+		it('should send a user-leave system message when a user leaves the chat room', (done) => {
+			socketModules.chats.getMessages({ uid: fooUid }, { uid: fooUid, roomId: roomId, start: 0 }, function (err, messages) {
+				assert.ifError(err);
+				assert.equal(messages.length, 3);
+				const message = messages.pop();
+				assert.strictEqual(message.system, true);
+				assert.strictEqual(message.content, 'user-leave');
+				done();
 			});
 		});
 
@@ -277,6 +297,13 @@ describe('Messaging Library', function () {
 			});
 		});
 
+		it('should fail to send chat if content is empty', function (done) {
+			socketModules.chats.send({ uid: fooUid }, { roomId: roomId, message: ' ' }, function (err) {
+				assert.equal(err.message, '[[error:invalid-chat-message]]');
+				done();
+			});
+		});
+
 		it('should send a message to a room', function (done) {
 			socketModules.chats.send({ uid: fooUid }, { roomId: roomId, message: 'first chat message' }, function (err, messageData) {
 				assert.ifError(err);
@@ -324,7 +351,8 @@ describe('Messaging Library', function () {
 					myRoomId = _roomId;
 					assert.ifError(err);
 					assert(myRoomId);
-					socketModules.chats.getRaw({ uid: bazUid }, { mid: 1 }, function (err) {
+					socketModules.chats.getRaw({ uid: bazUid }, { mid: 2 }, function (err) {
+						assert(err);
 						assert.equal(err.message, '[[error:not-allowed]]');
 						socketModules.chats.send({ uid: bazUid }, { roomId: myRoomId, message: 'admin will see this' }, function (err, message) {
 							assert.ifError(err);
@@ -343,7 +371,7 @@ describe('Messaging Library', function () {
 		it('should notify offline users of message', function (done) {
 			Messaging.notificationSendDelay = 100;
 
-			db.sortedSetAdd('users:online', Date.now() - 350000, herpUid, function (err) {
+			db.sortedSetAdd('users:online', Date.now() - ((meta.config.onlineCutoff * 60000) + 50000), herpUid, function (err) {
 				assert.ifError(err);
 				socketModules.chats.send({ uid: fooUid }, { roomId: roomId, message: 'second chat message' }, function (err) {
 					assert.ifError(err);
@@ -386,8 +414,8 @@ describe('Messaging Library', function () {
 			}, function (err, messages) {
 				assert.ifError(err);
 				assert(Array.isArray(messages));
-				assert.equal(messages[0].roomId, roomId);
-				assert.equal(messages[0].fromuid, fooUid);
+				assert.equal(messages[4].roomId, roomId);
+				assert.equal(messages[4].fromuid, fooUid);
 				done();
 			});
 		});
@@ -439,6 +467,16 @@ describe('Messaging Library', function () {
 		it('should rename room', function (done) {
 			socketModules.chats.renameRoom({ uid: fooUid }, { roomId: roomId, newName: 'new room name' }, function (err) {
 				assert.ifError(err);
+				done();
+			});
+		});
+
+		it('should send a room-rename system message when a room is renamed', (done) => {
+			socketModules.chats.getMessages({ uid: fooUid }, { uid: fooUid, roomId: roomId, start: 0 }, function (err, messages) {
+				assert.ifError(err);
+				const message = messages.pop();
+				assert.strictEqual(message.system, true);
+				assert.strictEqual(message.content, 'room-rename, new room name');
 				done();
 			});
 		});
@@ -552,6 +590,13 @@ describe('Messaging Library', function () {
 						done();
 					});
 				});
+			});
+		});
+
+		it('should fail to edit message if new content is empty string', function (done) {
+			socketModules.chats.edit({ uid: fooUid }, { mid: 5, roomId: roomId, message: ' ' }, function (err) {
+				assert.equal(err.message, '[[error:invalid-chat-message]]');
+				done();
 			});
 		});
 

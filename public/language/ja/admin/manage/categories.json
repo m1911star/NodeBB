@@ -17,8 +17,10 @@
 	"parent-category": "親カテゴリ",
 	"optional-parent-category": "(任意)親カテゴリ",
 	"parent-category-none": "(なし)",
+	"copy-parent": "親をコピー",
 	"copy-settings": "設定をコピー",
 	"optional-clone-settings": "カテゴリからのクローン設定(任意)",
+	"clone-children": "子カテゴリを複製して設定",
 	"purge": "カテゴリを切り離す",
 
 	"enable": "有効",
@@ -28,11 +30,13 @@
 	"select-category": "カテゴリを選択",
 	"set-parent-category": "親カテゴリとして設定",
 
-	"privileges.description": "このセクションでは、このカテゴリのアクセス制御権限を設定できます。権限は、ユーザー単位またはグループ単位で付与できます。新しいユーザーをこのテーブルに追加するには、以下のフォームで検索します。",
+	"privileges.description": "このセクションでは、サイトの一部にアクセス制御権限を設定できます。 特権は、ユーザーごとまたはグループごとに付与できます。 下のドロップダウンから有効なドメインを選択してください。",
+	"privileges.category-selector": "権限を設定",
 	"privileges.warning": "<strong>注</ strong>:特権の設定はすぐに有効になります。これらの設定を調整した後は、カテゴリを保存する必要はありません。",
 	"privileges.section-viewing": "特権の表示",
 	"privileges.section-posting": "権限の譲渡",
 	"privileges.section-moderation": "モデレート特権",
+	"privileges.section-other": "その他",
 	"privileges.section-user": "ユーザー",
 	"privileges.search-user": "ユーザーを追加",
 	"privileges.no-users": "このカテゴリにはユーザー固有の権限はありません。",
@@ -41,7 +45,12 @@
 	"privileges.search-group": "グループを追加",
 	"privileges.copy-to-children": "子要素にコピーする",
 	"privileges.copy-from-category": "カテゴリからのコピー",
+	"privileges.copy-privileges-to-all-categories": "すべてのカテゴリを選択",
+	"privileges.copy-group-privileges-to-children": "このグループの権限をこのカテゴリの子にコピーします",
+	"privileges.copy-group-privileges-to-all-categories": "このグループの権限をすべてのカテゴリにコピーしてください",
+	"privileges.copy-group-privileges-from": "このグループの権限を別のカテゴリからコピーしてください",
 	"privileges.inherit": "<code>登録済ユーザー</ code>グループに特定の権限が与えられている場合、他のすべてのグループはたとえ明示的に定義/検査されていなくても<strong>暗黙の特権</ strong>があります。すべてのユーザーは<code>登録済ユーザー</code>のユーザーグループの一部で、この暗黙の特権が表示されるため、追加グループの特権を明示的に付与する必要はありません。",
+	"privileges.copy-success": "特権がコピーされました!",
 
 	"analytics.back": "カテゴリ一覧に戻る",
 	"analytics.title": "カテゴリ\"%1\"のアナリティクス",
@@ -66,6 +75,7 @@
 	"alert.user-search": "ここでユーザーを検索...",
 	"alert.find-group": "グループを探す",
 	"alert.group-search": "ここでグループを検索する...",
-	"collapse-all": "Collapse All",
-	"expand-all": "Expand All"
+	"collapse-all": "すべて折りたたむ",
+	"expand-all": "すべて展開する",
+	"disable-on-create": "作成時に無効にする"
 }

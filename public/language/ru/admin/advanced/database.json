@@ -18,10 +18,17 @@
 	"mongo.resident-memory": "Долгосрочная память",
 	"mongo.virtual-memory": "Виртуальная память",
 	"mongo.mapped-memory": "Расширенная память",
+	"mongo.bytes-in": "Байт входящих",
+	"mongo.bytes-out": "Байт исходящих",
+	"mongo.num-requests": "Количество запросов",
 	"mongo.raw-info": "Сырые данные о MongoDB",
+	"mongo.unauthorized": "NodeBB не смог создать запрос к базе данных MongoDB соответствующей статистики. Пожалуйста убедитесь, что пользователь, используемый NodeBB имеет &quot;clusterMonitor&quot; привилегию для &quot;admin&quot; базы данных. ",
 
 	"redis": "Redis",
 	"redis.version": "Версия Redis",
+	"redis.keys": "Ключей",
+	"redis.expires": "Истекает",
+	"redis.avg-ttl": "Средний TTL",
 	"redis.connected-clients": "Подключенные клиенты",
 	"redis.connected-slaves": "Подключенные устройства",
 	"redis.blocked-clients": "Заблокированные клиенты",
@@ -30,7 +37,16 @@
 	"redis.total-connections-recieved": "Общее число подключений получено",
 	"redis.total-commands-processed": "Команд обработано в общем",
 	"redis.iops": "Мгновенные операции. в секунду",
+	"redis.iinput": "Текущих входящих в секунду",
+	"redis.ioutput": "Текущих исходящих в секунду",
+	"redis.total-input": "Всего входящих",
+	"redis.total-output": "Всего исходящих",
+
 	"redis.keyspace-hits": "Количество ключевых просмотров",
 	"redis.keyspace-misses": "Количество не ключевых просмотров",
-	"redis.raw-info": "Redis необработанная информация"
+	"redis.raw-info": "Redis необработанная информация",
+
+	"postgres": "Postgres",
+	"postgres.version": "Версия PostgreSQL",
+	"postgres.raw-info": "Информация о PostgreSQL"
 }

@@ -34,8 +34,11 @@ function buildTargets() {
 	);
 }
 
+var themeNamePattern = /^(@.*?\/)?nodebb-theme-.*$/;
+var pluginNamePattern = /^(@.*?\/)?nodebb-(theme|plugin|widget|rewards)-.*$/;
+
 function activate(plugin) {
-	if (plugin.startsWith('nodebb-theme-')) {
+	if (themeNamePattern.test(plugin)) {
 		reset.reset({
 			theme: plugin,
 		}, function (err) {
@@ -50,7 +53,7 @@ function activate(plugin) {
 			db.init(next);
 		},
 		function (next) {
-			if (!plugin.startsWith('nodebb-')) {
+			if (!pluginNamePattern.test(plugin)) {
 				// Allow omission of `nodebb-plugin-`
 				plugin = 'nodebb-plugin-' + plugin;
 			}
@@ -60,9 +63,19 @@ function activate(plugin) {
 			if (!isInstalled) {
 				return next(new Error('plugin not installed'));
 			}
+			plugins.isActive(plugin, next);
+		},
+		function (isActive, next) {
+			if (isActive) {
+				winston.info('Plugin `%s` already active', plugin);
+				process.exit(0);
+			}
 
+			db.sortedSetCard('plugins:active', next);
+		},
+		function (numPlugins, next) {
 			winston.info('Activating plugin `%s`', plugin);
-			db.sortedSetAdd('plugins:active', 0, plugin, next);
+			db.sortedSetAdd('plugins:active', numPlugins, plugin, next);
 		},
 		function (next) {
 			events.log({
@@ -81,7 +94,9 @@ function activate(plugin) {
 
 function listPlugins() {
 	async.waterfall([
-		db.init,
+		function (next) {
+			db.init(next);
+		},
 		function (next) {
 			db.getSortedSetRange('plugins:active', 0, -1, next);
 		},
@@ -94,11 +109,22 @@ function listPlugins() {
 	});
 }
 
-function listEvents() {
-	async.series([
-		db.init,
-		events.output,
-	]);
+function listEvents(count) {
+	async.waterfall([
+		function (next) {
+			db.init(next);
+		},
+		async.apply(events.getEvents, '', 0, (count || 10) - 1),
+		function (eventData) {
+			console.log(('\nDisplaying last ' + count + ' administrative events...').bold);
+			eventData.forEach(function (event) {
+				console.log('  * ' + String(event.timestampISO).green + ' ' + String(event.type).yellow + (event.text ? ' ' + event.text : '') + ' (uid: '.reset + (event.uid ? event.uid : 0) + ')');
+			});
+			process.exit();
+		},
+	], function (err) {
+		throw err;
+	});
 }
 
 function info() {
@@ -121,7 +147,9 @@ function info() {
 			console.log('  database: ' + config.database);
 			next();
 		},
-		db.init,
+		function (next) {
+			db.init(next);
+		},
 		function (next) {
 			db.info(db.client, next);
 		},
@@ -170,7 +198,17 @@ function info() {
 	});
 }
 
-exports.build = build.build;
+function buildWrapper(targets, options) {
+	build.build(targets, options, function (err) {
+		if (err) {
+			winston.error(err);
+			process.exit(1);
+		}
+		process.exit(0);
+	});
+}
+
+exports.build = buildWrapper;
 exports.buildTargets = buildTargets;
 exports.activate = activate;
 exports.listPlugins = listPlugins;

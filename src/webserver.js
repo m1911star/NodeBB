@@ -2,6 +2,7 @@
 'use strict';
 
 var fs = require('fs');
+const util = require('util');
 var path = require('path');
 var os = require('os');
 var nconf = require('nconf');
@@ -20,17 +21,16 @@ var favicon = require('serve-favicon');
 var detector = require('spider-detector');
 var helmet = require('helmet');
 
+var Benchpress = require('benchpressjs');
 var db = require('./database');
 var file = require('./file');
 var emailer = require('./emailer');
 var meta = require('./meta');
-var languages = require('./languages');
 var logger = require('./logger');
 var plugins = require('./plugins');
 var flags = require('./flags');
 var routes = require('./routes');
 var auth = require('./routes/authentication');
-var Benchpress = require('benchpressjs');
 
 var helpers = require('../public/src/modules/helpers');
 
@@ -44,6 +44,7 @@ if (nconf.get('ssl')) {
 }
 
 module.exports.server = server;
+module.exports.app = app;
 
 server.on('error', function (err) {
 	if (err.code === 'EADDRINUSE') {
@@ -65,7 +66,7 @@ server.on('connection', function (conn) {
 	});
 });
 
-module.exports.destroy = function (callback) {
+exports.destroy = function (callback) {
 	server.close(callback);
 	for (var key in connections) {
 		if (connections.hasOwnProperty(key)) {
@@ -74,88 +75,52 @@ module.exports.destroy = function (callback) {
 	}
 };
 
-module.exports.listen = function (callback) {
-	callback = callback || function () { };
+exports.listen = async function () {
 	emailer.registerApp(app);
+	setupExpressApp(app);
+	helpers.register();
+	logger.init(app);
+	await initializeNodeBB();
+	winston.info('NodeBB Ready');
 
-	async.waterfall([
-		function (next) {
-			setupExpressApp(app, next);
-		},
-		function (next) {
-			helpers.register();
+	require('./socket.io').server.emit('event:nodebb.ready', {
+		'cache-buster': meta.config['cache-buster'],
+		hostname: os.hostname(),
+	});
 
-			logger.init(app);
+	plugins.fireHook('action:nodebb.ready');
 
-			initializeNodeBB(next);
-		},
-		function (next) {
-			winston.info('NodeBB Ready');
-
-			require('./socket.io').server.emit('event:nodebb.ready', {
-				'cache-buster': meta.config['cache-buster'],
-				hostname: os.hostname(),
-			});
-
-			plugins.fireHook('action:nodebb.ready');
-
-			listen(next);
-		},
-	], callback);
+	await util.promisify(listen)();
 };
 
-function initializeNodeBB(callback) {
-	var middleware = require('./middleware');
-
-	async.waterfall([
-		async.apply(meta.themes.setupPaths),
-		function (next) {
-			plugins.init(app, middleware, next);
-		},
-		async.apply(plugins.fireHook, 'static:assets.prepare', {}),
-		function (next) {
-			plugins.fireHook('static:app.preload', {
-				app: app,
-				middleware: middleware,
-			}, next);
-		},
-		function (next) {
-			plugins.fireHook('filter:hotswap.prepare', [], next);
-		},
-		function (hotswapIds, next) {
-			routes(app, middleware, hotswapIds, next);
-		},
-		function (next) {
-			async.series([
-				meta.sounds.addUploads,
-				meta.blacklist.load,
-				flags.init,
-			], next);
-		},
-	], function (err) {
-		callback(err);
+async function initializeNodeBB() {
+	const middleware = require('./middleware');
+	await meta.themes.setupPaths();
+	await plugins.init(app, middleware);
+	await plugins.fireHook('static:assets.prepare', {});
+	await plugins.fireHook('static:app.preload', {
+		app: app,
+		middleware: middleware,
 	});
+	await routes(app, middleware);
+	await meta.sounds.addUploads();
+	await meta.blacklist.load();
+	await flags.init();
 }
 
-function setupExpressApp(app, callback) {
-	var middleware = require('./middleware');
-	var pingController = require('./controllers/ping');
+function setupExpressApp(app) {
+	const middleware = require('./middleware');
+	const pingController = require('./controllers/ping');
 
-	var relativePath = nconf.get('relative_path');
-	var viewsDir = nconf.get('views_dir');
+	const relativePath = nconf.get('relative_path');
+	const viewsDir = nconf.get('views_dir');
+
+	app.renderAsync = util.promisify((tpl, data, callback) => app.render(tpl, data, callback));
 
 	app.engine('tpl', function (filepath, data, next) {
 		filepath = filepath.replace(/\.tpl$/, '.js');
 
-		middleware.templatesOnDemand({
-			filePath: filepath,
-		}, null, function (err) {
-			if (err) {
-				return next(err);
-			}
-
-			Benchpress.__express(filepath, data, next);
-		});
+		Benchpress.__express(filepath, data, next);
 	});
 	app.set('view engine', 'tpl');
 	app.set('views', viewsDir);
@@ -178,32 +143,45 @@ function setupExpressApp(app, callback) {
 
 	app.use(relativePath + '/apple-touch-icon', middleware.routeTouchIcon);
 
-	app.use(bodyParser.urlencoded({ extended: true }));
-	app.use(bodyParser.json());
+	configureBodyParser(app);
+
 	app.use(cookieParser());
-	app.use(useragent.express());
-	app.use(detector.middleware());
+	const userAgentMiddleware = useragent.express();
+	app.use(function userAgent(req, res, next) {
+		userAgentMiddleware(req, res, next);
+	});
+	const spiderDetectorMiddleware = detector.middleware();
+	app.use(function spiderDetector(req, res, next) {
+		spiderDetectorMiddleware(req, res, next);
+	});
 
 	app.use(session({
 		store: db.sessionStore,
 		secret: nconf.get('secret'),
 		key: nconf.get('sessionKey'),
 		cookie: setupCookie(),
-		resave: true,
-		saveUninitialized: true,
+		resave: nconf.get('sessionResave') || false,
+		saveUninitialized: nconf.get('sessionSaveUninitialized') || false,
 	}));
 
 	app.use(helmet());
 	app.use(helmet.referrerPolicy({ policy: 'strict-origin-when-cross-origin' }));
+	if (meta.config['hsts-enabled']) {
+		app.use(helmet.hsts({
+			maxAge: meta.config['hsts-maxage'],
+			includeSubDomains: !!meta.config['hsts-subdomains'],
+			preload: !!meta.config['hsts-preload'],
+		}));
+	}
+
 	app.use(middleware.addHeaders);
 	app.use(middleware.processRender);
 	auth.initialize(app, middleware);
+	app.use(middleware.autoLocale);	// must be added after auth middlewares are added
 
 	var toobusy = require('toobusy-js');
-	toobusy.maxLag(parseInt(meta.config.eventLoopLagThreshold, 10) || 100);
-	toobusy.interval(parseInt(meta.config.eventLoopInterval, 10) || 500);
-
-	setupAutoLocale(app, callback);
+	toobusy.maxLag(meta.config.eventLoopLagThreshold);
+	toobusy.interval(meta.config.eventLoopInterval);
 }
 
 function setupFavicon(app) {
@@ -212,6 +190,17 @@ function setupFavicon(app) {
 	if (file.existsSync(faviconPath)) {
 		app.use(nconf.get('relative_path'), favicon(faviconPath));
 	}
+}
+
+function configureBodyParser(app) {
+	const urlencodedOpts = nconf.get('bodyParser:urlencoded') || {};
+	if (!urlencodedOpts.hasOwnProperty('extended')) {
+		urlencodedOpts.extended = true;
+	}
+	app.use(bodyParser.urlencoded(urlencodedOpts));
+
+	const jsonOpts = nconf.get('bodyParser:json') || {};
+	app.use(bodyParser.json(jsonOpts));
 }
 
 function setupCookie() {
@@ -235,35 +224,6 @@ function setupCookie() {
 	}
 
 	return cookie;
-}
-
-function setupAutoLocale(app, callback) {
-	languages.listCodes(function (err, codes) {
-		if (err) {
-			return callback(err);
-		}
-
-		var defaultLang = meta.config.defaultLang || 'en-GB';
-
-		var langs = [defaultLang].concat(codes).filter(function (el, i, arr) {
-			return arr.indexOf(el) === i;
-		});
-
-		app.use(function (req, res, next) {
-			if (parseInt(req.uid, 10) > 0 || parseInt(meta.config.autoDetectLang, 10) !== 1) {
-				return next();
-			}
-
-			var lang = req.acceptsLanguages(langs);
-			if (!lang) {
-				return next();
-			}
-			req.query.lang = lang;
-			next();
-		});
-
-		callback();
-	});
 }
 
 function listen(callback) {
@@ -329,7 +289,7 @@ function listen(callback) {
 	}
 }
 
-module.exports.testSocket = function (socketPath, callback) {
+exports.testSocket = function (socketPath, callback) {
 	if (typeof socketPath !== 'string') {
 		return callback(new Error('invalid socket path : ' + socketPath));
 	}
@@ -359,3 +319,4 @@ module.exports.testSocket = function (socketPath, callback) {
 	], callback);
 };
 
+require('./promisify')(exports);

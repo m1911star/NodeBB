@@ -7,24 +7,14 @@ define('search', ['navigator', 'translator', 'storage'], function (nav, translat
 	};
 
 	Search.query = function (data, callback) {
-		var term = data.term;
-
 		// Detect if a tid was specified
-		var topicSearch = term.match(/^in:topic-([\d]+) /);
-
+		var topicSearch = data.term.match(/^in:topic-([\d]+) /);
+		callback = callback || function () {};
 		if (!topicSearch) {
-			term = term.replace(/^[ ?#]*/, '');
-
-			try {
-				term = encodeURIComponent(term);
-			} catch (e) {
-				return app.alertError('[[error:invalid-search-term]]');
-			}
-
 			ajaxify.go('search?' + createQueryString(data));
 			callback();
 		} else {
-			var cleanedTerm = term.replace(topicSearch[0], '');
+			var cleanedTerm = data.term.replace(topicSearch[0], '');
 			var tid = topicSearch[1];
 
 			if (cleanedTerm.length > 0) {
@@ -33,11 +23,28 @@ define('search', ['navigator', 'translator', 'storage'], function (nav, translat
 		}
 	};
 
+	Search.api = function (data, callback) {
+		var apiURL = config.relative_path + '/api/search?' + createQueryString(data);
+		data.searchOnly = undefined;
+		var searchURL = config.relative_path + '/search?' + createQueryString(data);
+		$.get(apiURL, function (result) {
+			result.url = searchURL;
+			callback(result);
+		});
+	};
+
 	function createQueryString(data) {
 		var searchIn = data.in || 'titlesposts';
 		var postedBy = data.by || '';
+		var term = data.term.replace(/^[ ?#]*/, '');
+		try {
+			term = encodeURIComponent(term);
+		} catch (e) {
+			return app.alertError('[[error:invalid-search-term]]');
+		}
+
 		var query = {
-			term: data.term,
+			term: term,
 			in: searchIn,
 		};
 
@@ -77,6 +84,10 @@ define('search', ['navigator', 'translator', 'storage'], function (nav, translat
 
 		if (data.showAs) {
 			query.showAs = data.showAs;
+		}
+
+		if (data.searchOnly) {
+			query.searchOnly = data.searchOnly;
 		}
 
 		$(window).trigger('action:search.createQueryString', {

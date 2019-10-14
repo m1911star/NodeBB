@@ -2,7 +2,7 @@
 	"forum-traffic": "Provoz fóra",
 	"page-views": "Zobrazení stránky",
 	"unique-visitors": "Jedineční návštěvníci",
-	"users": "Uživatelé",
+	"new-users": "New Users",
 	"posts": "Příspěvky",
 	"topics": "Témata",
 	"page-views-seven": "Posledních 7 dnů",
@@ -14,9 +14,12 @@
 	"page-views-custom-help": "Zadejte rozsah data zobrazení stránek, které chcete vidět. Není-li datum nastaveno, výchozí formát je <code>YYYY-MM-DD</code>",
 	"page-views-custom-error": "Zadejte správný rozsah ve formátu <code>YYYY-MM-DD</code>",
 
-	"stats.day": "Den",
-	"stats.week": "Týden",
-	"stats.month": "Měsíc",
+	"stats.yesterday": "Yesterday",
+	"stats.today": "Today",
+	"stats.last-week": "Last Week",
+	"stats.this-week": "This Week",
+	"stats.last-month": "Last Month",
+	"stats.this-month": "This Month",
 	"stats.all": "Všechny časy",
 
 	"updates": "Aktualizace",
@@ -65,9 +68,12 @@
 	"high-presence-topics": "Témata s vysokou účastí",
 
 	"graphs.page-views": "Zobrazení stránky",
+	"graphs.page-views-registered": "Zobrazených stránek/registrovaní",
+	"graphs.page-views-guest": "Zobrazených stránek/hosté",
+	"graphs.page-views-bot": "Zobrazených stránek/bot",
 	"graphs.unique-visitors": "Jedineční návštěvníci",
 	"graphs.registered-users": "Registrovaní uživatelé",
 	"graphs.anonymous-users": "Anonymní uživatelé",
 	"last-restarted-by": "Poslední restart od",
-	"no-users-browsing": "No users browsing"
+	"no-users-browsing": "Nikdo si nic neprohlíží"
 }

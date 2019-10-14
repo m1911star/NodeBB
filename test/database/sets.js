@@ -22,6 +22,14 @@ describe('Set methods', function () {
 				done();
 			});
 		});
+
+		it('should not do anything if values array is empty', async function () {
+			await db.setAdd('emptyArraySet', []);
+			const members = await db.getSetMembers('emptyArraySet');
+			const exists = await db.exists('emptyArraySet');
+			assert.deepStrictEqual(members, []);
+			assert(!exists);
+		});
 	});
 
 	describe('getSetMembers()', function () {
@@ -57,6 +65,13 @@ describe('Set methods', function () {
 			db.setsAdd(['set1', 'set2'], 'value', function (err) {
 				assert.equal(err, null);
 				assert.equal(arguments.length, 1);
+				done();
+			});
+		});
+
+		it('should not error if keys is empty array', function (done) {
+			db.setsAdd([], 'value', function (err) {
+				assert.ifError(err);
 				done();
 			});
 		});
@@ -146,6 +161,14 @@ describe('Set methods', function () {
 				assert.equal(err, null);
 				assert.equal(arguments.length, 2);
 				assert.strictEqual(count, 5);
+				done();
+			});
+		});
+
+		it('should return 0 if set does not exist', function (done) {
+			db.setCount('doesnotexist', function (err, count) {
+				assert.ifError(err);
+				assert.strictEqual(count, 0);
 				done();
 			});
 		});

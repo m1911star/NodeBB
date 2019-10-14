@@ -18,10 +18,12 @@ define('handleBack', [
 	function saveClickedIndex() {
 		$('[component="category"]').on('click', '[component="topic/header"]', function () {
 			var clickedIndex = $(this).parents('[data-index]').attr('data-index');
+			var windowScrollTop = $(window).scrollTop();
 			$('[component="category/topic"]').each(function (index, el) {
-				if ($(el).offset().top - $(window).scrollTop() > 0) {
+				if ($(el).offset().top - windowScrollTop > 0) {
 					storage.setItem('category:bookmark', $(el).attr('data-index'));
 					storage.setItem('category:bookmark:clicked', clickedIndex);
+					storage.setItem('category:bookmark:offset', $(el).offset().top - windowScrollTop);
 					return false;
 				}
 			});
@@ -35,33 +37,31 @@ define('handleBack', [
 
 			storage.removeItem('category:bookmark');
 			storage.removeItem('category:bookmark:clicked');
-
-			bookmarkIndex = Math.max(0, parseInt(bookmarkIndex, 10) || 0);
-			clickedIndex = Math.max(0, parseInt(clickedIndex, 10) || 0);
 			if (!utils.isNumber(bookmarkIndex)) {
 				return;
 			}
+
+			bookmarkIndex = Math.max(0, parseInt(bookmarkIndex, 10) || 0);
+			clickedIndex = Math.max(0, parseInt(clickedIndex, 10) || 0);
 
 			if (config.usePagination) {
 				var page = Math.ceil((parseInt(bookmarkIndex, 10) + 1) / config.topicsPerPage);
 				if (parseInt(page, 10) !== ajaxify.data.pagination.currentPage) {
 					pagination.loadPage(page, function () {
-						handleBack.scrollToTopic(bookmarkIndex, clickedIndex, 0);
+						handleBack.scrollToTopic(bookmarkIndex, clickedIndex);
 					});
 				} else {
-					handleBack.scrollToTopic(bookmarkIndex, clickedIndex, 0);
+					handleBack.scrollToTopic(bookmarkIndex, clickedIndex);
 				}
 			} else {
 				if (bookmarkIndex === 0) {
-					handleBack.highlightTopic(clickedIndex);
+					handleBack.scrollToTopic(bookmarkIndex, clickedIndex);
 					return;
 				}
 
 				$('[component="category"]').empty();
 				loadTopicsMethod(Math.max(0, bookmarkIndex - 1) + 1, function () {
-					$(window).one('action:topics.loaded', function () {
-						handleBack.scrollToTopic(bookmarkIndex, clickedIndex, 0);
-					});
+					handleBack.scrollToTopic(bookmarkIndex, clickedIndex);
 				});
 			}
 		}
@@ -78,24 +78,19 @@ define('handleBack', [
 		}
 	};
 
-	handleBack.scrollToTopic = function (bookmarkIndex, clickedIndex, duration, offset) {
+	handleBack.scrollToTopic = function (bookmarkIndex, clickedIndex) {
 		if (!utils.isNumber(bookmarkIndex)) {
 			return;
-		}
-
-		if (!offset) {
-			offset = 0;
 		}
 
 		var scrollTo = components.get('category/topic', 'index', bookmarkIndex);
 
 		if (scrollTo.length) {
-			$('html, body').animate({
-				scrollTop: (scrollTo.offset().top - offset) + 'px',
-			}, duration !== undefined ? duration : 400, function () {
-				handleBack.highlightTopic(clickedIndex);
-				navigator.update();
-			});
+			var offset = storage.getItem('category:bookmark:offset');
+			storage.removeItem('category:bookmark:offset');
+			$(window).scrollTop(scrollTo.offset().top - offset);
+			handleBack.highlightTopic(clickedIndex);
+			navigator.update();
 		}
 	};
 

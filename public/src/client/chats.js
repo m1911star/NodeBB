@@ -9,7 +9,8 @@ define('forum/chats', [
 	'forum/chats/search',
 	'forum/chats/messages',
 	'benchpress',
-], function (components, translator, mousetrap, recentChats, search, messages, Benchpress) {
+	'composer/autocomplete',
+], function (components, translator, mousetrap, recentChats, search, messages, Benchpress, autocomplete) {
 	var Chats = {
 		initialised: false,
 	};
@@ -27,7 +28,6 @@ define('forum/chats', [
 		recentChats.init();
 
 		Chats.addEventListeners();
-		Chats.createAutoComplete($('[component="chat/input"]'));
 		Chats.resizeMainWindow();
 
 		if (env === 'md' || env === 'lg') {
@@ -58,6 +58,11 @@ define('forum/chats', [
 		Chats.addScrollHandler(ajaxify.data.roomId, ajaxify.data.uid, $('.chat-content'));
 		Chats.addCharactersLeftHandler($('[component="chat/main-wrapper"]'));
 		Chats.addIPHandler($('[component="chat/main-wrapper"]'));
+		Chats.createAutoComplete($('[component="chat/input"]'));
+
+		$('[data-action="close"]').on('click', function () {
+			Chats.switchChat();
+		});
 	};
 
 	Chats.addIPHandler = function (container) {
@@ -115,6 +120,14 @@ define('forum/chats', [
 					return app.alertError(err.message);
 				}
 				if (!data) {
+					loading = false;
+					return;
+				}
+				data = data.filter(function (chatMsg) {
+					return !$('[component="chat/message"][data-mid="' + chatMsg.messageId + '"]').length;
+				});
+				if (!data.length) {
+					loading = false;
 					return;
 				}
 				messages.parseMessage(data, function (html) {
@@ -345,22 +358,26 @@ define('forum/chats', [
 	};
 
 	Chats.createAutoComplete = function (element) {
+		if (!element.length) {
+			return;
+		}
+
 		var data = {
 			element: element,
 			strategies: [],
 			options: {
-				zIndex: 20000,
-				listPosition: function (position) {
-					this.$el.css(this._applyPlacement(position));
-					this.$el.css('position', 'absolute');
-					return this;
+				style: {
+					'z-index': 20000,
+					flex: 0,
+					top: 'inherit',
 				},
+				placement: 'top',
 			},
 		};
 
 		$(window).trigger('chat:autocomplete:init', data);
 		if (data.strategies.length) {
-			data.element.textcomplete(data.strategies, data.options);
+			autocomplete.setup(data);
 		}
 	};
 
@@ -385,6 +402,11 @@ define('forum/chats', [
 	};
 
 	Chats.switchChat = function (roomid) {
+		// Allow empty arg for return to chat list/close chat
+		if (!roomid) {
+			roomid = '';
+		}
+
 		var url = 'user/' + ajaxify.data.userslug + '/chats/' + roomid;
 		if (self.fetch) {
 			fetch(config.relative_path + '/api/' + url, { credentials: 'include' })
@@ -476,7 +498,13 @@ define('forum/chats', [
 
 	Chats.resizeMainWindow = function () {
 		var viewportHeight = $(window).height();
-		var fromTop = components.get('chat/main-wrapper').offset().top || components.get('chat/nav-wrapper').offset().top;
+		var mainWrapper = components.get('chat/main-wrapper');
+		var navWrapper = components.get('chat/nav-wrapper');
+		var fromTop = 0;
+		if (mainWrapper.length && navWrapper.length) {
+			fromTop = mainWrapper.offset().top || navWrapper.offset().top;
+		}
+
 		$('.chats-full').height(viewportHeight - fromTop - 1);
 
 		Chats.setActive();

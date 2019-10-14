@@ -5,6 +5,7 @@ define('forum/users', ['translator', 'benchpress'], function (translator, Benchp
 	var	Users = {};
 
 	var searchTimeoutID = 0;
+	var searchResultCount = 0;
 
 	$(window).on('action:ajaxify.start', function () {
 		if (searchTimeoutID) {
@@ -17,9 +18,10 @@ define('forum/users', ['translator', 'benchpress'], function (translator, Benchp
 		app.enterRoom('user_list');
 
 		var section = utils.params().section ? ('?section=' + utils.params().section) : '';
-		$('.nav-pills li').removeClass('active').find('a[href="' + window.location.pathname + section + '"]').parent().addClass('active');
+		$('.nav-pills li').removeClass('active').find('a[href="' + window.location.pathname + section + '"]').parent()
+			.addClass('active');
 
-		handleSearch();
+		Users.handleSearch();
 
 		handleInvite();
 
@@ -27,7 +29,8 @@ define('forum/users', ['translator', 'benchpress'], function (translator, Benchp
 		socket.on('event:user_status_change', onUserStatusChange);
 	};
 
-	function handleSearch() {
+	Users.handleSearch = function (params) {
+		searchResultCount = params && params.resultCount;
 		searchTimeoutID = 0;
 
 		$('#search-user').on('keyup', function () {
@@ -36,13 +39,13 @@ define('forum/users', ['translator', 'benchpress'], function (translator, Benchp
 				searchTimeoutID = 0;
 			}
 
-			searchTimeoutID = setTimeout(doSearch, 150);
+			searchTimeoutID = setTimeout(doSearch, 250);
 		});
 
 		$('.search select, .search input[type="checkbox"]').on('change', function () {
 			doSearch();
 		});
-	}
+	};
 
 	function doSearch() {
 		$('[component="user/search/icon"]').removeClass('fa-search').addClass('fa-spinner fa-spin');
@@ -102,6 +105,10 @@ define('forum/users', ['translator', 'benchpress'], function (translator, Benchp
 			$('.pagination-container').replaceWith(html);
 		});
 
+		if (searchResultCount) {
+			data.users = data.users.slice(0, searchResultCount);
+		}
+
 		Benchpress.parse('users', 'users', data, function (html) {
 			translator.translate(html, function (translated) {
 				translated = $(translated);
@@ -130,7 +137,7 @@ define('forum/users', ['translator', 'benchpress'], function (translator, Benchp
 
 	function handleInvite() {
 		$('[component="user/invite"]').on('click', function () {
-			bootbox.prompt('Email: ', function (email) {
+			bootbox.prompt('[[users:prompt-email]]', function (email) {
 				if (!email) {
 					return;
 				}
